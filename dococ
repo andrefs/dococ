@@ -848,16 +848,20 @@ do_run() {
             name="$picked"
         fi
     # Default: reuse the canonical container, recreating it if its isolation
-    # mode or mount layout no longer matches (mounts differ, so it is unusable).
+    # mode, mount layout, or image no longer matches.
     elif container_exists "$name"; then
-        local existing_iso existing_mountv
+        local existing_iso existing_mountv existing_image
         existing_iso="$(docker inspect -f '{{index .Config.Labels "dococ.isolated"}}' "$name" </dev/null)"
         existing_mountv="$(docker inspect -f '{{index .Config.Labels "dococ.mountv"}}' "$name" </dev/null)"
+        existing_image="$(docker inspect -f '{{.Config.Image}}' "$name" </dev/null)"
         if [[ "$existing_iso" != "$DOCOC_ISOLATED" ]]; then
             stderr "recreating '$name' (isolation changed)"
             docker rm -f "$name" >/dev/null </dev/null
         elif [[ "$existing_mountv" != "$DOCOC_MOUNT_VERSION" ]]; then
             stderr "recreating '$name' (mount layout changed)"
+            docker rm -f "$name" >/dev/null </dev/null
+        elif [[ "$existing_image" != "$DOCOC_IMAGE" ]]; then
+            stderr "recreating '$name' (image changed: $existing_image -> $DOCOC_IMAGE)"
             docker rm -f "$name" >/dev/null </dev/null
         fi
     fi
