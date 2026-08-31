@@ -20,7 +20,7 @@ DOCOC_WORKDIR="/workspace"
 # host username never appears inside the container.
 DOCOC_CONTAINER_HOME="${DOCOC_CONTAINER_HOME:-/home/ubuntu}"
 # Bump when the mount layout changes so existing containers are recreated.
-DOCOC_MOUNT_VERSION="3"
+DOCOC_MOUNT_VERSION="4"
 
 # Container-side destinations for opencode's state dirs and agent skills. These
 # are fixed so the containerized opencode (HOME=$DOCOC_CONTAINER_HOME) reads
@@ -435,8 +435,19 @@ build_mounts() {
         && core_mounts+=("-v" "$DOCOC_OPENCODE_DATA/auth.json:$DOCOC_C_DATA/auth.json:ro")
     [[ -d "$DOCOC_OPENCODE_STATE" ]] \
         && core_mounts+=("-v" "$DOCOC_OPENCODE_STATE:$DOCOC_C_STATE")
+    # The cache directory is read-write so opencode can create its temporary
+    # models catalog (models.json.<n>.tmp) and write quota state, but the
+    # executable plugin/LSP directories (node_modules, packages, bin) are
+    # overlaid read-only to keep their code immutable. A compromised agent
+    # can tamper with cache data but not with installed plugin binaries.
     [[ -d "$DOCOC_OPENCODE_CACHE" ]] \
-        && core_mounts+=("-v" "$DOCOC_OPENCODE_CACHE:$DOCOC_C_CACHE:ro")
+        && core_mounts+=("-v" "$DOCOC_OPENCODE_CACHE:$DOCOC_C_CACHE")
+    [[ -d "$DOCOC_OPENCODE_CACHE/node_modules" ]] \
+        && core_mounts+=("-v" "$DOCOC_OPENCODE_CACHE/node_modules:$DOCOC_C_CACHE/node_modules:ro")
+    [[ -d "$DOCOC_OPENCODE_CACHE/packages" ]] \
+        && core_mounts+=("-v" "$DOCOC_OPENCODE_CACHE/packages:$DOCOC_C_CACHE/packages:ro")
+    [[ -d "$DOCOC_OPENCODE_CACHE/bin" ]] \
+        && core_mounts+=("-v" "$DOCOC_OPENCODE_CACHE/bin:$DOCOC_C_CACHE/bin:ro")
     # Agent skills (and any future harness assets), read-only.
     [[ -d "$DOCOC_AGENTS_DIR" ]] \
         && core_mounts+=("-v" "$DOCOC_AGENTS_DIR:$DOCOC_C_AGENTS:ro")

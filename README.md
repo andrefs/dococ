@@ -128,8 +128,9 @@ container.
 | `~/.local/share/opencode/` | `/home/ubuntu/.local/share/opencode/` | rw |
 | `~/.local/share/opencode/auth.json` | `/home/ubuntu/.local/share/opencode/auth.json` | ro |
 | `~/.local/state/opencode/` | `/home/ubuntu/.local/state/opencode/` | rw |
-| `~/.cache/opencode/` | `/home/ubuntu/.cache/opencode/` | ro |
+| `~/.cache/opencode/` | `/home/ubuntu/.cache/opencode/` | rw* |
 | `~/.agents/` (skills) | `/home/ubuntu/.agents/` | ro |
+| * | `rw*` — `node_modules`, `packages`, and `bin` subdirectories are overlaid read-only to keep plugin/LSP code immutable. |
 
 ## Security model
 
@@ -144,10 +145,9 @@ usability.
 - **Credentials are read-only.** `auth.json` is bind-mounted read-only (overlaid on the
   read-write data mount), so the agent can use the API keys it authenticates with but cannot
   rewrite them or swap the provider endpoints they point at.
-- **Plugin & tool code is read-only.** `~/.cache/opencode/` (plugin `node_modules`, LSP servers,
-  quota state) is mounted read-only, so a compromised agent cannot tamper with the executable
-  code that later runs on the host.
 - **Skills are read-only.** `~/.agents/` is mounted read-only.
+- **Configuration is read-only.** `~/.config/opencode/` is mounted read-only, so the agent can
+  read but not rewrite your provider/model configuration or endpoints.
 - **Leased privilege.** The container drops all Linux capabilities (`--cap-drop ALL`) and runs
   with `no-new-privileges`, which raises the barrier against setuid/kernel-privilege escalation
   while leaving normal usage unaffected.
@@ -167,10 +167,14 @@ usability.
   exactly as given (read-write for `--mount`). dococ does not filter these: mounting `~/.ssh`,
   `/`, or `~/.gnupg` hands the container the host filesystem. They are a deliberate
   power-user escape hatch, not something the agent can add on its own.
-- **Installing skills/MCPs/plugins happens on the host.** Because the config and cache dirs (and
-  thus plugin/LSP state) are mounted read-only, the container is a *consumer*, not an installer.
-  Add or update skills, MCPs, or plugins from the host; the container picks them up on its next
-  run.
+- **The opencode cache is writable with immutable plugins.** `~/.cache/opencode/` is mounted
+  read-write so opencode can refresh its models catalog (`models.json`) and write cache data,
+  but its `node_modules`, `packages`, and `bin` subdirectories are overlaid read-only to keep
+  installed plugin/LSP code immutable. A compromised agent can tamper with cache data
+  but not with executable plugin code. (Config and skills stay read-only.)
+- **Installing skills/MCPs/plugins happens on the host.** Because the config dir is mounted
+  read-only, plugin/MCP/skill *configuration* cannot be written from inside the container; add or
+  update them from the host, and the container picks them up on its next run.
 - **The container filesystem is writable** and containers persist by default (`--rm` opts out),
   so a compromised session can lay down a foothold inside the container. It has no privilege and
   the read-only mounts limit what it can reach, but it survives across sessions until you `dococ
