@@ -170,12 +170,51 @@ parse_args() {
 # Subcommands (stubbed until their step lands)
 # ---------------------------------------------------------------------------
 
+# List all dococ-managed containers (identified by their dococ.project label).
+list_dococ_containers() {
+    docker ps -a --filter "label=dococ.project" --format '{{.Names}}'
+}
+
 do_status() {
-    die "status: not implemented yet"
+    command -v docker >/dev/null 2>&1 || die "docker not found in PATH"
+
+    local name project running header=1
+    mapfile -t names < <(list_dococ_containers)
+    for name in "${names[@]}"; do
+        [[ -n "$name" ]] || continue
+        project="$(docker inspect -f '{{index .Config.Labels "dococ.project"}}' "$name" </dev/null)"
+        if [[ "$(docker inspect -f '{{.State.Running}}' "$name" </dev/null)" == "true" ]]; then
+            running="running"
+        else
+            running="stopped"
+        fi
+        if ((header)); then
+            printf '%-42s %-8s %s\n' "CONTAINER" "STATE" "PROJECT"
+            header=0
+        fi
+        printf '%-42s %-8s %s\n' "$name" "$running" "$project"
+    done
+
+    [[ $header -eq 1 ]] && stderr "no dococ containers"
 }
 
 do_clean() {
-    die "clean: not implemented yet"
+    command -v docker >/dev/null 2>&1 || die "docker not found in PATH"
+
+    local name count=0
+    mapfile -t names < <(list_dococ_containers)
+    for name in "${names[@]}"; do
+        [[ -n "$name" ]] || continue
+        stderr "removing container '$name'"
+        docker rm -f "$name" >/dev/null </dev/null
+        count=$((count + 1))
+    done
+
+    if ((count)); then
+        stderr "removed $count dococ container(s)"
+    else
+        stderr "no dococ containers to remove"
+    fi
 }
 
 do_update() {
