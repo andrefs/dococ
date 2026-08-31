@@ -319,7 +319,7 @@ project_container_name() {
 
 # Does a docker container with the given name exist (in any state)?
 container_exists() {
-    docker ps -a --format '{{.Names}}' | grep -qx "$1"
+    docker ps -a --format '{{.Names}}' | grep -qxF "$1"
 }
 
 # List every dococ container belonging to a project, oldest first.
@@ -341,7 +341,7 @@ container_state() {
 retire_container() {
     local name="$1"
     local retired
-    retired="${name}.retired-$(date +%s)"
+    retired="${name}.retired-$(date +%s)-$$"
     stderr "retiring container '$name' as '$retired'"
     docker rename "$name" "$retired" </dev/null
 }
