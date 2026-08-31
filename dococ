@@ -365,11 +365,16 @@ Output config ONLY to STDOUT. Your analysis/thinking goes to stderr automaticall
 
     # Run opencode on host to analyze project and generate config
     local generated
-    # Stream opencode output in real-time with thinking; capture stdout for config
-    generated=$(opencode run "$prompt" --thinking </dev/null 2>&1 | tee >(cat >&2)) || {
+    local stdout_file
+    stdout_file=$(mktemp)
+    # Stream opencode stderr live; capture stdout to temp file
+    opencode run "$prompt" --thinking </dev/null 2>&1 | tee >(cat >&2) > "$stdout_file" || {
         stderr "opencode analysis failed"
+        rm -f "$stdout_file"
         return 1
     }
+    generated=$(cat "$stdout_file")
+    rm -f "$stdout_file"
 
     # Filter out opencode debug/activity lines from stdout, keep only config lines
     # Config lines start with DOCOC_ or are comments (#) or empty lines
