@@ -6,7 +6,7 @@
 #
 #   docker build -t dococ/opencode:<project-hash> \
 #     --build-arg APT_PACKAGES="cargo golang" \
-#     --build-arg SETUP_COMMANDS="rustup component add rust-analyzer" .
+#     --build-arg SETUP_COMMANDS=$'rustup component add rust-analyzer\ncargo install cargo-watch' .
 
 # Volatile tag so the image tracks the environment it builds in.
 FROM ubuntu:24.04
@@ -15,7 +15,7 @@ FROM ubuntu:24.04
 ARG APT_PACKAGES=""
 
 # Build arg for setup commands (newline-separated, run as ubuntu user)
-# Example: SETUP_COMMANDS="rustup component add rust-analyzer\ncargo install cargo-watch"
+# Example: SETUP_COMMANDS=$'rustup component add rust-analyzer\ncargo install cargo-watch'
 ARG SETUP_COMMANDS=""
 
 # Base tooling: curl/tar for the installer, git for coding agents, ca-certificates
@@ -51,10 +51,12 @@ RUN mkdir -p "$OPENCODE_HOME/.opencode" \
 
 # Run user-provided setup commands (LSP installs, etc.) as the ubuntu user.
 # Commands are newline-separated in the SETUP_COMMANDS build arg.
+# We write them to a script file to handle newlines and special chars correctly.
 RUN if [ -n "$SETUP_COMMANDS" ]; then \
-        printf '%b' "$SETUP_COMMANDS" | while IFS= read -r cmd; do \
-            [ -n "$cmd" ] && runuser -u "$OPENCODE_USER" -- bash -lc "$cmd"; \
-        done; \
+        printf '%s\n' "$SETUP_COMMANDS" > /tmp/setup-commands.sh \
+        && chmod +x /tmp/setup-commands.sh \
+        && runuser -u "$OPENCODE_USER" -- bash /tmp/setup-commands.sh \
+        && rm -f /tmp/setup-commands.sh; \
     fi
 
 # Convenience workspace mount point referenced by dococ at run time.
