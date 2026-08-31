@@ -218,7 +218,7 @@ do_clean() {
 }
 
 do_update() {
-    local script_dir self dockerfile
+    local script_dir dockerfile
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     dockerfile="$script_dir/Dockerfile"
 
