@@ -408,7 +408,6 @@ Write the config directly to $config_file. Your analysis/thinking will be shown 
 
     if [[ -f "$config_file" ]]; then
         stderr "generated $config_file"
-        cat "$config_file"
     else
         stderr "warning: opencode did not create $config_file"
     fi
