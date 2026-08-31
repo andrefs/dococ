@@ -334,96 +334,84 @@ do_gen_config() {
         [[ "$ans" =~ ^[Yy]$ ]] || { stderr "aborted"; return 0; }
     fi
 
-    stderr "analyzing project with opencode..."
-
-    prompt="Analyze this project and generate a dococ config file as a bash script.
-
-OUTPUT ONLY THE BASH CONFIG TO STDOUT. NO EXPLANATIONS, NO MARKDOWN, NO DEBUG LOGS.
-
-Your analysis/thinking will be shown to the user on stderr automatically.
-
-SECURITY CONSTRAINTS (must follow):
-- NEVER mount ~/.ssh, ~/.gnupg, /etc, /, or other sensitive directories
-- Only mount directories that are clearly project-related and safe
-- Prefer read-only mounts where possible (use :ro suffix)
-- Minimize mounts - less is more secure
-- DO NOT output any secrets, tokens, keys, or sensitive paths in findings
-
-CONFIG FORMAT (use exact dococ variable names as bash arrays):
-- DOCOC_APT_PACKAGES=(pkg1 pkg2)       # space-separated in parens
-- DOCOC_MOUNTS=()                      # DO NOT ADD MOUNTS - user will be prompted separately
-- DOCOC_MOUNT_FILES=()                 # DO NOT ADD MOUNTS - user will be prompted separately
-- DOCOC_ENV=(KEY=VALUE KEY2=VALUE2)
-- DOCOC_ISOLATED=0|1
-- DOCOC_OFFLINE=0|1
-- DOCOC_REMOVE=0|1
-- (other DOCOC_* vars as needed)
-
-Reference the full list of available config variables at: $example_url
-
-Output config ONLY to STDOUT. Your analysis/thinking goes to stderr automatically."
-
-    # Run opencode on host to analyze project and generate config
-    local generated
-    local stdout_file
-    stdout_file=$(mktemp)
-    # Stream opencode stderr live; capture stdout to temp file
-    opencode run "$prompt" --thinking </dev/null 2>&1 | tee >(cat >&2) > "$stdout_file" || {
-        stderr "opencode analysis failed"
-        rm -f "$stdout_file"
-        return 1
-    }
-    generated=$(cat "$stdout_file")
-    rm -f "$stdout_file"
-
-    # Filter out opencode debug/activity lines from stdout, keep only config lines
-    # Config lines start with DOCOC_ or are comments (#) or empty lines
-    generated=$(printf '%s\n' "$generated" | grep -E '^(DOCOC_[A-Z_]+=|#|$)')
-
-    # Write the generated config (stdout only)
-    printf '%s\n' "$generated" > "$config_file"
-    stderr "generated $config_file"
-    cat "$config_file"
-
-    # Now prompt user for extra mounts
-    prompt_extra_mounts "$config_file"
-}
-
-# Prompt user for additional mounts and append to config file.
-prompt_extra_mounts() {
-    local config_file="$1"
-    local mount
+    # First, prompt user for extra mounts and mount-files
+    local mounts=()
+    local mount_files=()
 
     echo
     stderr "Default mounts already include: project dir, opencode config/data/state/cache, agents."
     stderr "You can add extra mounts now (e.g., for shared data, credentials, tools)."
     stderr "Press Enter to skip, or enter mount spec (host_path[:container_path][:ro])."
 
-    # Mounts
     while true; do
         read -r -p "Extra mount (or empty to finish)? " mount
         [[ -n "$mount" ]] || break
-        # Append to DOCOC_MOUNTS array in config file
-        # Use | as sed delimiter since mount paths contain /
-        sed -i "/^DOCOC_MOUNTS=(/s|)| \"$mount\")|" "$config_file"
-        if ! grep -q "^DOCOC_MOUNTS=" "$config_file"; then
-            echo "DOCOC_MOUNTS=(\"$mount\")" >> "$config_file"
-        fi
+        mounts+=("$mount")
     done
 
-    # Mount files
     stderr "Extra mount-files (read-only individual files). Press Enter to skip."
     while true; do
         read -r -p "Extra mount-file (host_file[:container_path]) or empty to finish? " mount
         [[ -n "$mount" ]] || break
-        sed -i "/^DOCOC_MOUNT_FILES=(/s|)| \"$mount\")|" "$config_file"
-        if ! grep -q "^DOCOC_MOUNT_FILES=" "$config_file"; then
-            echo "DOCOC_MOUNT_FILES=(\"$mount\")" >> "$config_file"
-        fi
+        mount_files+=("$mount")
     done
 
-    stderr "final config:"
-    cat "$config_file"
+    # Build the prompt for opencode
+    local mount_str=""
+    if (( ${#mounts[@]} )); then
+        mount_str="User requested extra mounts:\n"
+        for m in "${mounts[@]}"; do
+            mount_str+="  $m\n"
+        done
+    fi
+    local mount_file_str=""
+    if (( ${#mount_files[@]} )); then
+        mount_file_str="User requested extra mount-files:\n"
+        for m in "${mount_files[@]}"; do
+            mount_file_str+="  $m\n"
+        done
+    fi
+
+    prompt="Analyze this project and create a .dococ config file at $config_file.
+
+$mount_str$mount_file_str
+
+Requirements:
+1. Detect project type (Node.js, Python, Rust, Go, etc.)
+2. Recommend system dependencies (apt packages) in DOCOC_APT_PACKAGES
+3. Suggest useful environment variables in DOCOC_ENV
+4. Set DOCOC_ISOLATED, DOCOC_OFFLINE, DOCOC_REMOVE as appropriate
+5. Include the user's extra mounts/mount-files in DOCOC_MOUNTS and DOCOC_MOUNT_FILES
+6. Use exact dococ variable names as bash arrays:
+   - DOCOC_APT_PACKAGES=(pkg1 pkg2)
+   - DOCOC_MOUNTS=(\"src:dst:ro\" ...)
+   - DOCOC_MOUNT_FILES=(\"src:dst:ro\" ...)
+   - DOCOC_ENV=(KEY=VALUE ...)
+7. Add explanatory comments
+
+SECURITY CONSTRAINTS:
+- NEVER mount ~/.ssh, ~/.gnupg, /etc, /, or other sensitive directories
+- Only mount directories that are clearly project-related and safe
+- Prefer read-only mounts where possible (use :ro suffix)
+- Minimize mounts - less is more secure
+- DO NOT output any secrets, tokens, keys, or sensitive paths
+
+Reference the full list of available config variables at: $example_url
+
+Write the config directly to $config_file. Your analysis/thinking will be shown to the user automatically."
+
+    stderr "analyzing project with opencode..."
+    opencode run "$prompt" --thinking </dev/null || {
+        stderr "opencode analysis failed"
+        return 1
+    }
+
+    if [[ -f "$config_file" ]]; then
+        stderr "generated $config_file"
+        cat "$config_file"
+    else
+        stderr "warning: opencode did not create $config_file"
+    fi
 }
 
 do_update() {
