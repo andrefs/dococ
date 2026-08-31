@@ -178,7 +178,19 @@ do_clean() {
 }
 
 do_update() {
-    die "update: not implemented yet"
+    local script_dir self dockerfile
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    dockerfile="$script_dir/Dockerfile"
+
+    command -v docker >/dev/null 2>&1 || die "docker not found in PATH"
+
+    if [[ ! -f "$dockerfile" ]]; then
+        die "Dockerfile not found at $dockerfile (is dococ cloned as a repo?)"
+    fi
+
+    stderr "building image '$DOCOC_IMAGE'..."
+    docker build -t "$DOCOC_IMAGE" -f "$dockerfile" "$script_dir"
+    stderr "image '$DOCOC_IMAGE' built"
 }
 
 do_run() {
