@@ -745,10 +745,17 @@ build_mounts() {
     # container, and vice versa. This is also the container's working directory.
     core_mounts+=("-v" "$DOCOC_PROJECT_DIR:$DOCOC_PROJECT_DIR")
     # User-requested mounts.
-    for src in "${DOCOC_MOUNTS[@]}"; do
+    for mount_spec in "${DOCOC_MOUNTS[@]}"; do
+        # Parse mount spec: source[:destination[:options]]
+        local src dst opts
+        IFS=':' read -r src dst opts <<< "$mount_spec"
         src="$(readlink -f "$src")"
         [[ -e "$src" ]] || die "mount path does not exist: $src"
-        core_mounts+=("-v" "$src:$src")
+        if [[ -n "$dst" ]]; then
+            core_mounts+=("-v" "$src:$dst${opts:+:$opts}")
+        else
+            core_mounts+=("-v" "$src:$src")
+        fi
     done
     for src in "${DOCOC_MOUNT_FILES[@]}"; do
         src="$(readlink -f "$src")"
@@ -866,12 +873,20 @@ do_run() {
 
     if [[ -n "$DOCOC_COMMAND" ]]; then
         set +e
-        docker exec -it "$name" bash -lc "$DOCOC_COMMAND"
+        if [[ -t 0 ]]; then
+            docker exec -it "$name" bash -lc "$DOCOC_COMMAND"
+        else
+            docker exec -i "$name" bash -lc "$DOCOC_COMMAND"
+        fi
         local rc=$?
         set -e
     else
         set +e
-        docker exec -it "$name" opencode
+        if [[ -t 0 ]]; then
+            docker exec -it "$name" opencode
+        else
+            docker exec -i "$name" opencode
+        fi
         local rc=$?
         set -e
     fi
