@@ -380,7 +380,8 @@ Requirements:
 1. Detect project type (Node.js, Python, Rust, Go, etc.)
 2. Recommend system dependencies (apt packages) in DOCOC_APT_PACKAGES
 3. Suggest useful environment variables in DOCOC_ENV
-4. Set DOCOC_ISOLATED, DOCOC_OFFLINE, DOCOC_REMOVE as appropriate
+4. Set DOCOC_OFFLINE, DOCOC_REMOVE as appropriate
+5. DO NOT set DOCOC_ISOLATED=true unless the user explicitly requests isolation. Default to DOCOC_ISOLATED=false (shared opencode database across host and container sessions).
 5. Include the user's extra mounts/mount-files in DOCOC_MOUNTS and DOCOC_MOUNT_FILES
 6. Use exact dococ variable names as bash arrays:
    - DOCOC_APT_PACKAGES=(pkg1 pkg2)
