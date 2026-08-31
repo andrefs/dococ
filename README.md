@@ -67,11 +67,12 @@ collide). A plain `dococ` always reuses the canonical container for the current 
 You can manage containers per project:
 
 - `--new` — create a fresh canonical container, keeping the old one by renaming it to
-  `dococ-<dirname>-<hash>.retired-<timestamp>`.
+  `dococ-<dirname>-<hash>.retired-<timestamp>-<pid>`.
 - `--replace` — destroy every container for the project, then create a fresh one.
 - `--pick [NAME]` — use a specific container for this run. With a container `NAME`, use it
-  directly; without one, list this project's containers and choose interactively (including a
-  "new container" option).
+  directly (any dococ container on the system, not just this project's — an explicit escape
+  hatch; the canonical name is left unchanged); without one, list this project's containers
+  and choose interactively (including a "new container" option).
 - `dococ list` — list this project's containers, marking the canonical one.
 
 ## Configuration
@@ -84,9 +85,9 @@ You can manage containers per project:
 | `--mount-file PATH` | Mount an individual file, read-only (repeatable). |
 | `-e, --env KEY=VAL` | Set an environment variable in the container (repeatable). |
 | `--isolated` | Use a per-project opencode data dir instead of the shared database. |
-| `-n, --new` | Create a fresh canonical container, keeping the old one (renamed `.retired-<ts>`). |
+| `-n, --new` | Create a fresh canonical container, keeping the old one (renamed `.retired-<ts>-<pid>`). |
 | `--replace` | Destroy the project's container(s), then create a fresh one. |
-| `--pick [NAME]` | Use a specific project container this run; without `NAME`, pick interactively. |
+| `--pick [NAME]` | Use a specific container this run; with `NAME`, target any dococ container directly; without it, pick interactively. |
 | `--rm` | Remove the container when the session ends (default is keep). |
 | `--keep` | Keep the container on exit (explicit; the default). |
 | `--offline` | Run with `--network none` for purely local work. |
