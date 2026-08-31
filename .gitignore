@@ -1,0 +1,12 @@
+# Build/image artifacts
+Dockerfile.*
+*.dockerfile
+.dockerignore
+
+# Editor/OS cruft
+*.swp
+*~
+.DS_Store
+
+# Local dococ runtime state (if any is created in-tree)
+.dococ/
