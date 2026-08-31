@@ -251,6 +251,32 @@ container_exists() {
     docker ps -a --format '{{.Names}}' | grep -qx "$1"
 }
 
+# When --isolated is set, redirect the opencode data/state/cache mounts to
+# per-project dirs (seeded from the real ones) so each project's sessions are
+# isolated while config and auth stay available. Mutates DOCOC_OPENCODE_*.
+prepare_isolated_data() {
+    local project_dir="$1"
+    local hash base root
+    base="$(basename "$project_dir")"
+    hash="$(printf '%s' "$project_dir" | cksum | awk '{print $1}')"
+    root="$DOCOC_DATA_DIR/$base-$hash"
+
+    mkdir -p "$root/share" "$root/state" "$root/cache"
+
+    # Seed the isolated data dir with the real auth.json so the container can
+    # still reach providers, but starts with a clean session database.
+    # opencode config stays shared via its own read-only mount.
+    [[ -f "$DOCOC_OPENCODE_DATA/auth.json" ]] \
+        && cp -f "$DOCOC_OPENCODE_DATA/auth.json" "$root/share/auth.json"
+
+    # Swap the mount sources to the isolated dirs.
+    DOCOC_OPENCODE_DATA="$root/share"
+    DOCOC_OPENCODE_STATE="$root/state"
+    DOCOC_OPENCODE_CACHE="$root/cache"
+
+    stderr "isolated opencode data: $root"
+}
+
 # Build the -v mounts shared by every dococ container. Appends user-specified
 # mounts and mount-files afterwards. Uses global-state builder output var.
 build_mounts() {
@@ -289,6 +315,7 @@ create_container() {
         run -d --name "$name"
         --label "dococ.project=$DOCOC_PROJECT_DIR"
         --label "dococ.workdir=$DOCOC_WORKDIR"
+        --label "dococ.isolated=$DOCOC_ISOLATED"
         --user "$(id -u):$(id -g)"
         --workdir "$DOCOC_WORKDIR"
         -e HOME=/home/ubuntu
@@ -317,18 +344,31 @@ do_run() {
 
     command -v docker >/dev/null 2>&1 || die "docker not found in PATH"
 
+    if [[ "$DOCOC_ISOLATED" = 1 ]]; then
+        prepare_isolated_data "$DOCOC_PROJECT_DIR"
+    fi
+
     if [[ "$DOCOC_NEW" = 1 ]] && container_exists "$name"; then
         stderr "removing existing container '$name' (--new)"
-        docker rm -f "$name" >/dev/null
+        docker rm -f "$name" >/dev/null </dev/null
+    elif container_exists "$name"; then
+        # Recreate if the existing container's isolation mode mismatches the
+        # requested one (mounts differ, so the old container is unusable).
+        local existing_iso
+        existing_iso="$(docker inspect -f '{{index .Config.Labels "dococ.isolated"}}' "$name" </dev/null)"
+        if [[ "$existing_iso" != "$DOCOC_ISOLATED" ]]; then
+            stderr "recreating '$name' (isolation changed)"
+            docker rm -f "$name" >/dev/null </dev/null
+        fi
     fi
 
     if ! container_exists "$name"; then
         stderr "creating container '$name'..."
         create_container "$name"
         stderr "container '$name' created"
-    elif [[ "$(docker inspect -f '{{.State.Running}}' "$name")" != "true" ]]; then
+    elif [[ "$(docker inspect -f '{{.State.Running}}' "$name" </dev/null)" != "true" ]]; then
         stderr "starting stopped container '$name'..."
-        docker start "$name" >/dev/null
+        docker start "$name" >/dev/null </dev/null
     fi
 
     if [[ -n "$DOCOC_COMMAND" ]]; then
