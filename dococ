@@ -55,6 +55,10 @@ DOCOC_IMAGE="${DOCOC_IMAGE:-$DOCOC_IMAGE_DEFAULT}"
 # Populated from global and per-project config files.
 declare -a DOCOC_APT_PACKAGES=()
 
+# Setup commands to run at build time (LSP installs, tool setup, etc.).
+# Populated from global and per-project config files.
+declare -a DOCOC_SETUP_COMMANDS=()
+
 # CLI-resolved options (populated by the parser).
 declare -a DOCOC_MOUNTS=()
 declare -a DOCOC_MOUNT_FILES=()
@@ -381,14 +385,16 @@ Requirements:
 2. Recommend system dependencies (apt packages) in DOCOC_APT_PACKAGES
 3. Suggest useful environment variables in DOCOC_ENV
 4. Set DOCOC_OFFLINE, DOCOC_REMOVE as appropriate
-5. DO NOT set DOCOC_ISOLATED=true unless the user explicitly requests isolation. Default to DOCOC_ISOLATED=false (shared opencode database across host and container sessions).
-5. Include the user's extra mounts/mount-files in DOCOC_MOUNTS and DOCOC_MOUNT_FILES
-6. Use exact dococ variable names as bash arrays:
+6. DO NOT set DOCOC_ISOLATED=true unless the user explicitly requests isolation. Default to DOCOC_ISOLATED=false (shared opencode database across host and container sessions).
+7. Include the user's extra mounts/mount-files in DOCOC_MOUNTS and DOCOC_MOUNT_FILES
+8. Recommend language server installation commands in DOCOC_SETUP_COMMANDS (e.g., rustup component add rust-analyzer, go install golang.org/x/tools/gopls@latest, npm i -g typescript-language-server, pip install pyright, cargo install lua-language-server). These run at build time as the ubuntu user.
+9. Use exact dococ variable names as bash arrays:
    - DOCOC_APT_PACKAGES=(pkg1 pkg2)
    - DOCOC_MOUNTS=(\"src:dst:ro\" ...)
    - DOCOC_MOUNT_FILES=(\"src:dst:ro\" ...)
    - DOCOC_ENV=(KEY=VALUE ...)
-7. Add explanatory comments
+   - DOCOC_SETUP_COMMANDS=(\"cmd1\" \"cmd2\" ...)
+10. Add explanatory comments
 
 SECURITY CONSTRAINTS:
 - NEVER mount ~/.ssh, ~/.gnupg, /etc, /, or other sensitive directories
@@ -415,7 +421,7 @@ Write the config directly to $config_file. Your analysis/thinking will be shown 
 }
 
 do_update() {
-    local script_dir dockerfile apt_packages
+    local script_dir dockerfile apt_packages setup_commands
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     dockerfile="$script_dir/Dockerfile"
 
@@ -428,8 +434,22 @@ do_update() {
     # Join apt packages array into space-separated string for build arg
     apt_packages="${DOCOC_APT_PACKAGES[*]}"
     
+    # Join setup commands array into newline-separated string for build arg
+    # Use printf to handle newlines properly
+    if (( ${#DOCOC_SETUP_COMMANDS[@]} > 0 )); then
+        setup_commands=$(printf '%s\n' "${DOCOC_SETUP_COMMANDS[@]}")
+    else
+        setup_commands=""
+    fi
+    
     stderr "building image '$DOCOC_IMAGE' with apt packages: ${apt_packages:-<none>}..."
-    docker build --build-arg "APT_PACKAGES=${apt_packages}" -t "$DOCOC_IMAGE" -f "$dockerfile" "$script_dir"
+    if [[ -n "$setup_commands" ]]; then
+        stderr "  setup commands: ${#DOCOC_SETUP_COMMANDS[@]} command(s)"
+    fi
+    docker build \
+        --build-arg "APT_PACKAGES=${apt_packages}" \
+        --build-arg "SETUP_COMMANDS=${setup_commands}" \
+        -t "$DOCOC_IMAGE" -f "$dockerfile" "$script_dir"
     stderr "image '$DOCOC_IMAGE' built"
 }
 

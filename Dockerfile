@@ -4,13 +4,19 @@
 # (`curl -fsSL https://opencode.ai/install | bash`), so the binary is always the
 # latest release. Project folders and opencode state are mounted at run time.
 #
-#   docker build -t dococ/opencode:<project-hash> --build-arg APT_PACKAGES="cargo golang" .
+#   docker build -t dococ/opencode:<project-hash> \
+#     --build-arg APT_PACKAGES="cargo golang" \
+#     --build-arg SETUP_COMMANDS="rustup component add rust-analyzer" .
 
 # Volatile tag so the image tracks the environment it builds in.
 FROM ubuntu:24.04
 
 # Build arg for additional apt packages (space-separated)
 ARG APT_PACKAGES=""
+
+# Build arg for setup commands (newline-separated, run as ubuntu user)
+# Example: SETUP_COMMANDS="rustup component add rust-analyzer\ncargo install cargo-watch"
+ARG SETUP_COMMANDS=""
 
 # Base tooling: curl/tar for the installer, git for coding agents, ca-certificates
 # for HTTPS, and node/npm for opencode plugins and MCP servers (e.g. @playwright/mcp).
@@ -36,12 +42,20 @@ RUN apt-get update \
 # --no-modify-path: we set PATH explicitly via ENV rather than editing a shell rc.
 ENV OPENCODE_USER=ubuntu \
     OPENCODE_HOME=/home/ubuntu \
-    PATH="/home/ubuntu/.opencode/bin:${PATH}"
+    PATH="/home/ubuntu/.opencode/bin:/home/ubuntu/.cargo/bin:/home/ubuntu/.npm-global/bin:/home/ubuntu/go/bin:/home/ubuntu/.local/bin:${PATH}"
 
 RUN mkdir -p "$OPENCODE_HOME/.opencode" \
     && chown -R "$OPENCODE_USER":"$OPENCODE_USER" "$OPENCODE_HOME" \
     && runuser -u "$OPENCODE_USER" -- bash -c \
         "curl -fsSL https://opencode.ai/install | bash -s -- --no-modify-path"
+
+# Run user-provided setup commands (LSP installs, etc.) as the ubuntu user.
+# Commands are newline-separated in the SETUP_COMMANDS build arg.
+RUN if [ -n "$SETUP_COMMANDS" ]; then \
+        printf '%b' "$SETUP_COMMANDS" | while IFS= read -r cmd; do \
+            [ -n "$cmd" ] && runuser -u "$OPENCODE_USER" -- bash -lc "$cmd"; \
+        done; \
+    fi
 
 # Convenience workspace mount point referenced by dococ at run time.
 RUN mkdir -p /workspace && chown "$OPENCODE_USER":"$OPENCODE_USER" /workspace
