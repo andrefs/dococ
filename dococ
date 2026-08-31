@@ -96,6 +96,7 @@ Usage:
   dococ clean
   dococ update
   dococ gen-config
+  dococ images
 
 With no subcommand, dococ opens (or reuses) a container for the current
 project and launches opencode inside it.
@@ -130,6 +131,7 @@ Subcommands:
   clean        Remove all dococ containers.
   update       Rebuild the dococ image from the current opencode binary.
   gen-config   Generate a .dococ config by analyzing the project with opencode.
+  images       List all dococ container images.
 EOF
 }
 
@@ -233,7 +235,7 @@ parse_args() {
                 [[ $# -ge 1 ]] || die "option '$arg' requires an argument"
                 DOCOC_COMMAND="$1"
                 ;;
-            list|status|clean|update|gen-config)
+            list|status|clean|update|gen-config|images)
                 # Subcommand dispatch happens after parsing.
                 DOCOC_SUBCOMMAND="${arg}"
                 ;;
@@ -305,6 +307,15 @@ do_list() {
     else
         stderr "no containers for this project"
     fi
+}
+
+# List all dococ images (per-project and base).
+do_images() {
+    command -v docker >/dev/null 2>&1 || die "docker not found in PATH"
+
+    docker images --format '{{.Repository}}:{{.Tag}}\t{{.Size}}\t{{.CreatedAt}}' \
+        'dococ/opencode:*' 2>/dev/null | sort || \
+        stderr "no dococ images found"
 }
 
 do_clean() {
@@ -788,6 +799,7 @@ main() {
         clean)     do_clean ;;
         update)    do_update ;;
         gen-config) do_gen_config ;;
+        images)    do_images ;;
         run)       do_run ;;
         *)         die "unknown subcommand: $DOCOC_SUBCOMMAND" ;;
     esac
