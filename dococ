@@ -340,12 +340,7 @@ do_gen_config() {
 
 OUTPUT ONLY THE BASH CONFIG TO STDOUT. NO EXPLANATIONS, NO MARKDOWN, NO DEBUG LOGS.
 
-Output findings/analysis to STDERR using lines prefixed with 'FINDING: '.
-Findings should include:
-- Project type detected (Node.js, Python, Rust, Go, etc.)
-- Key dependency files found (package.json, Cargo.toml, pyproject.toml, go.mod, etc.)
-- System dependencies recommended (apt packages)
-- Notable project structure observations
+Your analysis/thinking will be shown to the user on stderr automatically.
 
 SECURITY CONSTRAINTS (must follow):
 - NEVER mount ~/.ssh, ~/.gnupg, /etc, /, or other sensitive directories
@@ -366,17 +361,12 @@ CONFIG FORMAT (use exact dococ variable names as bash arrays):
 
 Reference the full list of available config variables at: $example_url
 
-Output config ONLY to STDOUT. Output findings ONLY to STDERR with 'FINDING: ' prefix."
+Output config ONLY to STDOUT. Your analysis/thinking goes to stderr automatically."
 
     # Run opencode on host to analyze project and generate config
     local generated raw_output
-    # Capture stdout (config) and stderr (findings) separately
-    # Redirect stdin from /dev/null so opencode doesn't consume our later prompts
-    raw_output=$(opencode run "$prompt" </dev/null 2> >(while IFS= read -r line; do
-        if [[ "$line" =~ ^FINDING:[[:space:]]*(.*) ]]; then
-            stderr "found: ${BASH_REMATCH[1]}"
-        fi
-    done) 2>&1) || {
+    # Capture stdout (config) and pass through stderr (activity) in real-time
+    raw_output=$(opencode run "$prompt" </dev/null 2>&1) || {
         stderr "opencode analysis failed"
         return 1
     }
