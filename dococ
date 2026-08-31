@@ -338,32 +338,53 @@ do_gen_config() {
 
     prompt="Analyze this project and generate a dococ config file as a bash script.
 
-Output ONLY the config file content (bash syntax, setting DOCOC_* variables).
+OUTPUT ONLY THE BASH CONFIG TO STDOUT. NO EXPLANATIONS, NO MARKDOWN, NO DEBUG LOGS.
 
-Requirements:
-1. Detect project type (Node.js, Python, Rust, Go, etc.)
-2. Recommend system dependencies (apt packages) in DOCOC_APT_PACKAGES
-3. Suggest ONLY safe, project-relevant mounts in DOCOC_MOUNTS
-4. Suggest useful environment variables in DOCOC_ENV
+Output findings/analysis to STDERR using lines prefixed with 'FINDING: '.
+Findings should include:
+- Project type detected (Node.js, Python, Rust, Go, etc.)
+- Key dependency files found (package.json, Cargo.toml, pyproject.toml, go.mod, etc.)
+- System dependencies recommended (apt packages)
+- Notable project structure observations
 
 SECURITY CONSTRAINTS (must follow):
 - NEVER mount ~/.ssh, ~/.gnupg, /etc, /, or other sensitive directories
 - Only mount directories that are clearly project-related and safe
 - Prefer read-only mounts where possible (use :ro suffix)
 - Minimize mounts - less is more secure
+- DO NOT output any secrets, tokens, keys, or sensitive paths in findings
+
+CONFIG FORMAT (use exact dococ variable names as bash arrays):
+- DOCOC_APT_PACKAGES=(pkg1 pkg2)       # space-separated in parens
+- DOCOC_MOUNTS=(\"src:dst:ro\" \"src2:dst2\")  # with optional :ro suffix
+- DOCOC_MOUNT_FILES=(\"src:dst:ro\")
+- DOCOC_ENV=(KEY=VALUE KEY2=VALUE2)
+- DOCOC_ISOLATED=0|1
+- DOCOC_OFFLINE=0|1
+- DOCOC_REMOVE=0|1
+- (other DOCOC_* vars as needed)
 
 Reference the full list of available config variables at: $example_url
 
-Output only the bash config content. Include explanatory comments."
+Output config ONLY to STDOUT. Output findings ONLY to STDERR with 'FINDING: ' prefix."
 
     # Run opencode on host to analyze project and generate config
-    local generated
-    generated=$(opencode run "$prompt" 2>/dev/null) || {
+    local generated raw_output
+    # Capture stdout (config) and stderr (findings) separately
+    raw_output=$(opencode run "$prompt" 2> >(while IFS= read -r line; do
+        if [[ "$line" =~ ^FINDING:[[:space:]]*(.*) ]]; then
+            stderr "found: ${BASH_REMATCH[1]}"
+        fi
+    done) 2>&1) || {
         stderr "opencode analysis failed"
         return 1
     }
 
-    # Write the generated config
+    # Filter out opencode debug/activity lines from stdout, keep only config lines
+    # Config lines start with DOCOC_ or are comments (#) or empty lines
+    generated=$(printf '%s\n' "$raw_output" | grep -E '^(DOCOC_[A-Z_]+=|#|$)')
+
+    # Write the generated config (stdout only)
     printf '%s\n' "$generated" > "$config_file"
     stderr "generated $config_file"
     cat "$config_file"
