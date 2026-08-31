@@ -10,3 +10,4 @@ Dockerfile.*
 
 # Local dococ runtime state (if any is created in-tree)
 .dococ/
+.dococ
