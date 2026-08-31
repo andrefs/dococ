@@ -875,21 +875,23 @@ do_run() {
         docker start "$name" >/dev/null </dev/null
     fi
 
+    CONTAINER_PATH="/home/ubuntu/.opencode/bin:/home/ubuntu/.cargo/bin:/home/ubuntu/.npm-global/bin:/home/ubuntu/go/bin:/home/ubuntu/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
     if [[ -n "$DOCOC_COMMAND" ]]; then
         set +e
         if [[ -t 0 ]]; then
-            docker exec -it "$name" bash -lc "$DOCOC_COMMAND"
+            docker exec -it -e PATH="$CONTAINER_PATH" "$name" bash -lc "$DOCOC_COMMAND"
         else
-            docker exec -i "$name" bash -lc "$DOCOC_COMMAND"
+            docker exec -i -e PATH="$CONTAINER_PATH" "$name" bash -lc "$DOCOC_COMMAND"
         fi
         local rc=$?
         set -e
     else
         set +e
         if [[ -t 0 ]]; then
-            docker exec -it "$name" opencode
+            docker exec -it -e PATH="$CONTAINER_PATH" "$name" opencode
         else
-            docker exec -i "$name" opencode
+            docker exec -i -e PATH="$CONTAINER_PATH" "$name" opencode
         fi
         local rc=$?
         set -e
