@@ -44,7 +44,16 @@ DOCOC_CONFIG_DIR="${DOCOC_CONFIG_DIR:-$HOME/.config/dococ}"
 DOCOC_DATA_DIR="${DOCOC_DATA_DIR:-$HOME/.local/share/dococ}"
 
 # User can override image and container naming via environment/config.
+# Track if explicitly set in environment (before default).
+DOCOC_IMAGE_EXPLICIT=0
+if [[ -v DOCOC_IMAGE ]]; then
+    DOCOC_IMAGE_EXPLICIT=1
+fi
 DOCOC_IMAGE="${DOCOC_IMAGE:-$DOCOC_IMAGE_DEFAULT}"
+
+# Additional apt packages to install in the per-project image.
+# Populated from global and per-project config files.
+declare -a DOCOC_APT_PACKAGES=()
 
 # CLI-resolved options (populated by the parser).
 declare -a DOCOC_MOUNTS=()
@@ -289,7 +298,7 @@ do_clean() {
 }
 
 do_update() {
-    local script_dir dockerfile
+    local script_dir dockerfile apt_packages
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     dockerfile="$script_dir/Dockerfile"
 
@@ -299,8 +308,11 @@ do_update() {
         die "Dockerfile not found at $dockerfile (is dococ cloned as a repo?)"
     fi
 
-    stderr "building image '$DOCOC_IMAGE'..."
-    docker build -t "$DOCOC_IMAGE" -f "$dockerfile" "$script_dir"
+    # Join apt packages array into space-separated string for build arg
+    apt_packages="${DOCOC_APT_PACKAGES[*]}"
+    
+    stderr "building image '$DOCOC_IMAGE' with apt packages: ${apt_packages:-<none>}..."
+    docker build --build-arg "APT_PACKAGES=${apt_packages}" -t "$DOCOC_IMAGE" -f "$dockerfile" "$script_dir"
     stderr "image '$DOCOC_IMAGE' built"
 }
 
@@ -308,13 +320,23 @@ do_update() {
 # Container creation and run
 # ---------------------------------------------------------------------------
 
+# Compute the hash component for a project directory.
+project_hash() {
+    printf '%s' "$1" | cksum | awk '{print $1}'
+}
+
 # Stable container name for a project directory: dococ-<dirname>-<short hash>.
 project_container_name() {
     local dir="$1"
     local base hash
     base="$(basename "$dir")"
-    hash="$(printf '%s' "$dir" | cksum | awk '{print $1}')"
+    hash="$(project_hash "$dir")"
     printf 'dococ-%s-%s' "$base" "$hash"
+}
+
+# Per-project image tag: dococ/opencode:<hash>
+project_image_tag() {
+    printf 'dococ/opencode:%s' "$(project_hash "$1")"
 }
 
 # Does a docker container with the given name exist (in any state)?
@@ -606,6 +628,21 @@ main() {
     load_config "$DOCOC_CONFIG_DIR/config.sh"
     local project_config="${DOCOC_PROJECT_CONFIG:-$PWD/.dococ}"
     load_config "$project_config"
+
+    # Determine image tag:
+    # - If DOCOC_IMAGE was explicitly set in environment, use it.
+    # - Else if apt packages declared or project config exists, use per-project image.
+    # - Else use base image (global config only).
+    if (( DOCOC_IMAGE_EXPLICIT )); then
+        # User explicitly set a custom image; use as-is.
+        :
+    elif (( ${#DOCOC_APT_PACKAGES[@]} > 0 )) || [[ -f "$project_config" ]]; then
+        DOCOC_PROJECT_DIR="${DOCOC_PROJECT_DIR:-$PWD}"
+        DOCOC_IMAGE="$(project_image_tag "$DOCOC_PROJECT_DIR")"
+    else
+        # No per-project packages/config; use base image tag.
+        DOCOC_IMAGE="dococ/opencode:base"
+    fi
 
     parse_args "$@"
 

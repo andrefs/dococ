@@ -4,10 +4,13 @@
 # (`curl -fsSL https://opencode.ai/install | bash`), so the binary is always the
 # latest release. Project folders and opencode state are mounted at run time.
 #
-#   docker build -t dococ/opencode:latest .
+#   docker build -t dococ/opencode:<project-hash> --build-arg APT_PACKAGES="cargo golang" .
 
 # Volatile tag so the image tracks the environment it builds in.
 FROM ubuntu:24.04
+
+# Build arg for additional apt packages (space-separated)
+ARG APT_PACKAGES=""
 
 # Base tooling: curl/tar for the installer, git for coding agents, ca-certificates
 # for HTTPS, and node/npm for opencode plugins and MCP servers (e.g. @playwright/mcp).
@@ -19,6 +22,9 @@ RUN apt-get update \
         git \
         nodejs \
         npm \
+    && if [ -n "$APT_PACKAGES" ]; then \
+        apt-get install -y --no-install-recommends $APT_PACKAGES; \
+    fi \
     && rm -rf /var/lib/apt/lists/*
 
 # Ubuntu's base image ships a user "ubuntu" created with the first available UID

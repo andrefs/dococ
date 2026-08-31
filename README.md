@@ -51,7 +51,7 @@ dococ                # open (or reuse) the container for this project, launch op
 dococ --command 'make test'   # run a one-off command in the project container
 dococ status         # list dococ containers
 dococ clean          # remove all dococ containers
-dococ update         # rebuild the opencode image
+dococ update         # (re)build the project's opencode image (uses .dococ apt packages)
 ```
 
 With no subcommand, `dococ` creates a container for the current project if needed and launches
@@ -74,6 +74,11 @@ You can manage containers per project:
   hatch; the canonical name is left unchanged); without one, list this project's containers
   and choose interactively (including a "new container" option).
 - `dococ list` — list this project's containers, marking the canonical one.
+
+Each project also gets its own **container image** (`dococ/opencode:<project-hash>`) built
+with the project's declared apt packages (see [System packages](#system-packages-apt)).
+If a project declares no extra packages and has no `.dococ` file, a shared base image
+(`dococ/opencode:base`) is used.
 
 ## Configuration
 
@@ -102,14 +107,30 @@ Two Bash-sourced config files allow setting defaults:
 - **Global** — `~/.config/dococ/config.sh`
 - **Per-project** — `.dococ` in the project root (loaded after the global file)
 
-Both may set `DOCOC_*` variables and append to the `DOCOC_MOUNTS`, `DOCOC_MOUNT_FILES`, and
-`DOCOC_ENV` arrays. Precedence is: CLI flags > project config > global config > built-in
-defaults.
+Both may set `DOCOC_*` variables and append to the `DOCOC_MOUNTS`, `DOCOC_MOUNT_FILES`,
+`DOCOC_ENV`, and `DOCOC_APT_PACKAGES` arrays. Precedence is: CLI flags > project config >
+global config > built-in defaults.
+
+### System packages (apt)
+
+Declare additional apt packages to be installed in the project's container image via
+`DOCOC_APT_PACKAGES`. Each project gets its own image (`dococ/opencode:<project-hash>`)
+built with the merged package list from global + project config.
+
+```sh
+# In ~/.config/dococ/config.sh or .dococ
+DOCOC_APT_PACKAGES=(cargo golang python3)
+```
+
+Run `dococ update` from the project directory to (re)build the image with those packages.
+If no apt packages are declared and no `.dococ` file exists, a shared base image
+(`dococ/opencode:base`) is used.
 
 Example `~/.config/dococ/config.sh`:
 
 ```sh
 DOCOC_IMAGE="dococ/opencode:latest"
+DOCOC_APT_PACKAGES=(cargo)
 DOCOC_MOUNTS=(~/notes ~/secrets)
 DOCOC_ENV=(EDITOR=vim)
 DOCOC_OFFLINE=0
