@@ -91,6 +91,7 @@ dococ ${DOCOC_VERSION} — run opencode inside a Docker container.
 
 Usage:
   dococ [options] [--command CMD]
+  dococ init
   dococ list
   dococ status
   dococ clean
@@ -126,6 +127,7 @@ Options:
   -v, --version          Show version and exit.
 
 Subcommands:
+  init         Initialize project: generate config, build image.
   list         List this project's containers.
   status       List all dococ containers.
   clean        Remove all dococ containers.
@@ -315,7 +317,7 @@ parse_args() {
                 [[ $# -ge 1 ]] || die "option '$arg' requires an argument"
                 DOCOC_COMMAND="$1"
                 ;;
-            list|status|clean|update|gen-config|images)
+            list|status|clean|update|gen-config|images|init)
                 # Subcommand dispatch happens after parsing.
                 DOCOC_SUBCOMMAND="${arg}"
                 ;;
@@ -551,6 +553,34 @@ do_update() {
         --build-arg "SETUP_COMMANDS=${setup_commands}" \
         -t "$DOCOC_IMAGE" -f "$dockerfile" "$script_dir"
     stderr "image '$DOCOC_IMAGE' built"
+}
+
+# Initialize a new project: generate config and build image.
+do_init() {
+    local config_file="${DOCOC_GEN_CONFIG_OUTPUT}"
+
+    if [[ -f "$config_file" ]]; then
+        read -r -p "$config_file already exists. Re-run gen-config? [y/N] " ans
+        [[ "$ans" =~ ^[Yy]$ ]] || { stderr "init aborted"; return 0; }
+    fi
+
+    stderr "initializing dococ project..."
+    
+    # Run gen-config
+    do_gen_config
+    
+    # Check if config was created
+    if [[ ! -f "$config_file" ]]; then
+        stderr "gen-config failed to create $config_file"
+        return 1
+    fi
+
+    # Run update to build the image
+    stderr "building container image..."
+    do_update
+    
+    stderr "project initialized successfully"
+    stderr "run 'dococ' to start opencode"
 }
 
 # ---------------------------------------------------------------------------
@@ -883,6 +913,7 @@ main() {
     parse_args "$@"
 
     case "$DOCOC_SUBCOMMAND" in
+        init)      do_init ;;
         list)      do_list ;;
         status)    do_status ;;
         clean)     do_clean ;;
