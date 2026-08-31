@@ -52,6 +52,9 @@ declare -a DOCOC_MOUNT_FILES=()
 declare -a DOCOC_ENV=()
 DOCOC_ISOLATED=0
 DOCOC_NEW=0
+DOCOC_REPLACE=0
+DOCOC_PICK=0
+DOCOC_PICK_NAME=""
 DOCOC_REMOVE=0
 DOCOC_OFFLINE=0
 DOCOC_COMMAND=""
@@ -75,6 +78,7 @@ dococ ${DOCOC_VERSION} — run opencode inside a Docker container.
 
 Usage:
   dococ [options] [--command CMD]
+  dococ list
   dococ status
   dococ clean
   dococ update
@@ -88,7 +92,14 @@ Options:
   -e, --env KEY=VAL      Set an environment variable in the container (repeatable).
       --isolated         Use a per-project opencode data dir instead of the
                          shared database.
-  -n, --new              Force a new container (removes the existing one).
+  -n, --new              Create a fresh container; keep the existing one
+                         (retired under a new name).
+      --replace          Destroy the existing container(s) for this project,
+                         then create a fresh one.
+      --pick [NAME]      Choose a container to use. With NAME, use that
+                         container directly; without it, list this project's
+                         containers and interactively pick one (one-shot;
+                         canonical name unchanged).
       --rm               Remove the container when the session ends (default: keep).
       --keep             Keep the container on exit (explicit; the default).
       --offline          Run with --network none (no network access at all).
@@ -97,7 +108,8 @@ Options:
   -v, --version          Show version and exit.
 
 Subcommands:
-  status       List dococ containers.
+  list         List this project's containers.
+  status       List all dococ containers.
   clean        Remove all dococ containers.
   update       Rebuild the dococ image from the current opencode binary.
 EOF
@@ -154,6 +166,21 @@ parse_args() {
             -n|--new)
                 DOCOC_NEW=1
                 ;;
+            --replace)
+                DOCOC_REPLACE=1
+                ;;
+            --pick)
+                DOCOC_PICK=1
+                # Optional explicit selection: `--pick NAME` where NAME is one
+                # of this project's container names. Omit it to choose
+                # interactively. A bare `dococ-` token is treated as the name.
+                if [[ $# -ge 2 && "$2" == dococ-* ]]; then
+                    DOCOC_PICK_NAME="$2"
+                    shift
+                else
+                    DOCOC_PICK_NAME=""
+                fi
+                ;;
             --rm)
                 DOCOC_REMOVE=1
                 ;;
@@ -168,7 +195,7 @@ parse_args() {
                 [[ $# -ge 1 ]] || die "option '$arg' requires an argument"
                 DOCOC_COMMAND="$1"
                 ;;
-            status|clean|update)
+            list|status|clean|update)
                 # Subcommand dispatch happens after parsing.
                 DOCOC_SUBCOMMAND="${arg}"
                 ;;
@@ -213,6 +240,33 @@ do_status() {
     done
 
     [[ $header -eq 1 ]] && stderr "no dococ containers"
+}
+
+# List this project's containers (the canonical one is marked). The canonical
+# name is what a plain `dococ` reuses; the rest are retired `--new` containers
+# or would-be replacements.
+do_list() {
+    command -v docker >/dev/null 2>&1 || die "docker not found in PATH"
+
+    local project name canonical state header=1
+    project="$(pwd)"
+    canonical="$(project_container_name "$project")"
+
+    mapfile -t names < <(project_containers "$project")
+    if (( ${#names[@]} )); then
+        for name in "${names[@]}"; do
+            [[ -n "$name" ]] || continue
+            state="$(container_state "$name")"
+            if [[ "$name" == "$canonical" ]]; then
+                printf '%-42s %-8s %-9s %s\n' "$name" "$state" "(canonical)" "$project"
+            else
+                printf '%-42s %-8s %-9s %s\n' "$name" "$state" "-" "$project"
+            fi
+            header=0
+        done
+    else
+        stderr "no containers for this project"
+    fi
 }
 
 do_clean() {
@@ -266,6 +320,74 @@ project_container_name() {
 # Does a docker container with the given name exist (in any state)?
 container_exists() {
     docker ps -a --format '{{.Names}}' | grep -qx "$1"
+}
+
+# List every dococ container belonging to a project, oldest first.
+project_containers() {
+    docker ps -a --filter "label=dococ.project=$1" --format '{{.Names}}'
+}
+
+# running or stopped for a container name.
+container_state() {
+    if [[ "$(docker inspect -f '{{.State.Running}}' "$1" </dev/null)" == "true" ]]; then
+        printf 'running'
+    else
+        printf 'stopped'
+    fi
+}
+
+# Retire the canonical container so a fresh one can take its name. The old
+# container is preserved (renamed) rather than destroyed.
+retire_container() {
+    local name="$1"
+    local retired
+    retired="${name}.retired-$(date +%s)"
+    stderr "retiring container '$name' as '$retired'"
+    docker rename "$name" "$retired" </dev/null
+}
+
+# Interactive --pick: list the project's containers and let the user choose one
+# to exec into (including a "new container" option). Prints the chosen container
+# name on stdout, or the empty string for "new container".
+pick_container() {
+    local project="$1"
+    local base="$2"
+    local -a names=()
+    local -a labels=()
+    local i name state
+
+    mapfile -t names < <(project_containers "$project")
+    if (( ${#names[@]} )); then
+        for i in "${!names[@]}"; do
+            name="${names[$i]}"
+            state="$(container_state "$name")"
+            labels+=("$i) $name ($state)")
+            printf '%d) %s (%s)\n' "$i" "$name" "$state" >&2
+        done
+        printf '%d) (new container)\n' "${#names[@]}" >&2
+    else
+        stderr "no existing containers for this project"
+        printf '%d) (new container)\n' "0" >&2
+        names=()
+    fi
+
+    printf 'choose: ' >&2
+    read -r i </dev/tty || die "no selection (stdin closed)"
+
+    if [[ -z "$i" ]]; then
+        die "no container selected"
+    fi
+
+    if (( i == ${#names[@]} )); then
+        printf 'NEW'
+        return 0
+    fi
+
+    if (( i < 0 || i >= ${#names[@]} )); then
+        die "invalid selection: $i"
+    fi
+
+    printf '%s' "${names[$i]}"
 }
 
 # When --isolated is set, redirect the opencode data/state/cache mounts to
@@ -378,12 +500,46 @@ do_run() {
         prepare_isolated_data "$DOCOC_PROJECT_DIR"
     fi
 
-    if [[ "$DOCOC_NEW" = 1 ]] && container_exists "$name"; then
-        stderr "removing existing container '$name' (--new)"
-        docker rm -f "$name" >/dev/null </dev/null
+    # --replace: destroy every container for this project, then create fresh.
+    if [[ "$DOCOC_REPLACE" = 1 ]]; then
+        local old
+        mapfile -t old < <(project_containers "$DOCOC_PROJECT_DIR")
+        for c in "${old[@]}"; do
+            [[ -n "$c" ]] || continue
+            stderr "removing container '$c' (--replace)"
+            docker rm -f "$c" >/dev/null </dev/null
+        done
+    # --new: keep the existing container (retire it under a new name) and
+    # create a fresh one with the canonical name.
+    elif [[ "$DOCOC_NEW" = 1 ]]; then
+        if container_exists "$name"; then
+            retire_container "$name"
+        fi
+    # --pick: use a specific container for this invocation (one-shot; the
+    # canonical name stays unchanged). With a NAME, select it directly; print
+    # NEW from the interactive list to create a fresh one (retiring the base).
+    elif [[ "$DOCOC_PICK" = 1 ]]; then
+        local picked
+        if [[ -n "$DOCOC_PICK_NAME" ]]; then
+            if ! container_exists "$DOCOC_PICK_NAME"; then
+                die "no such container: $DOCOC_PICK_NAME"
+            fi
+            picked="$DOCOC_PICK_NAME"
+        else
+            picked="$(pick_container "$DOCOC_PROJECT_DIR" "$name")"
+            if [[ "$picked" == "NEW" ]]; then
+                if container_exists "$name"; then
+                    retire_container "$name"
+                fi
+                picked=""
+            fi
+        fi
+        if [[ -n "$picked" ]]; then
+            name="$picked"
+        fi
+    # Default: reuse the canonical container, recreating it if its isolation
+    # mode or mount layout no longer matches (mounts differ, so it is unusable).
     elif container_exists "$name"; then
-        # Recreate if the existing container's isolation mode or mount layout
-        # mismatches the requested one (mounts differ, so it is unusable).
         local existing_iso existing_mountv
         existing_iso="$(docker inspect -f '{{index .Config.Labels "dococ.isolated"}}' "$name" </dev/null)"
         existing_mountv="$(docker inspect -f '{{index .Config.Labels "dococ.mountv"}}' "$name" </dev/null)"
@@ -440,6 +596,7 @@ main() {
     parse_args "$@"
 
     case "$DOCOC_SUBCOMMAND" in
+        list)   do_list ;;
         status) do_status ;;
         clean)  do_clean ;;
         update) do_update ;;

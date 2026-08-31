@@ -60,9 +60,19 @@ the next `dococ` in the same folder reuses it. Use `--rm` to destroy it on exit.
 
 ### Container identity
 
-Each project gets its own container, named `dococ-<dirname>-<hash>` where `<hash>` is a digest
-of the project's absolute path (so same-named folders in different locations don't collide).
-`--new` forces a new container for the project, removing the previous one first.
+Each project gets one **canonical** container named `dococ-<dirname>-<hash>` where `<hash>` is a
+digest of the project's absolute path (so same-named folders in different locations don't
+collide). A plain `dococ` always reuses the canonical container for the current project.
+
+You can manage containers per project:
+
+- `--new` — create a fresh canonical container, keeping the old one by renaming it to
+  `dococ-<dirname>-<hash>.retired-<timestamp>`.
+- `--replace` — destroy every container for the project, then create a fresh one.
+- `--pick [NAME]` — use a specific container for this run. With a container `NAME`, use it
+  directly; without one, list this project's containers and choose interactively (including a
+  "new container" option).
+- `dococ list` — list this project's containers, marking the canonical one.
 
 ## Configuration
 
@@ -74,7 +84,9 @@ of the project's absolute path (so same-named folders in different locations don
 | `--mount-file PATH` | Mount an individual file, read-only (repeatable). |
 | `-e, --env KEY=VAL` | Set an environment variable in the container (repeatable). |
 | `--isolated` | Use a per-project opencode data dir instead of the shared database. |
-| `-n, --new` | Force a new container (removes the existing one for the project). |
+| `-n, --new` | Create a fresh canonical container, keeping the old one (renamed `.retired-<ts>`). |
+| `--replace` | Destroy the project's container(s), then create a fresh one. |
+| `--pick [NAME]` | Use a specific project container this run; without `NAME`, pick interactively. |
 | `--rm` | Remove the container when the session ends (default is keep). |
 | `--keep` | Keep the container on exit (explicit; the default). |
 | `--offline` | Run with `--network none` for purely local work. |
