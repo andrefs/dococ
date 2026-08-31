@@ -104,13 +104,18 @@ DOCOC_OFFLINE=0
 
 ### Default mounts
 
+Host state is mounted under the container's home directory (`/home/ubuntu`), so the
+containerized opencode reads it via `$HOME` and the host username never appears in the
+container.
+
 | Host | Container | Mode |
 |------|-----------|------|
 | `$PWD` (project) | `/workspace` | rw |
-| `~/.config/opencode/` | `~/.config/opencode/` | ro |
-| `~/.local/share/opencode/` | `~/.local/share/opencode/` | rw |
-| `~/.local/state/opencode/` | `~/.local/state/opencode/` | rw |
-| `~/.cache/opencode/` | `~/.cache/opencode/` | rw |
+| `~/.config/opencode/` | `/home/ubuntu/.config/opencode/` | ro |
+| `~/.local/share/opencode/` | `/home/ubuntu/.local/share/opencode/` | rw |
+| `~/.local/state/opencode/` | `/home/ubuntu/.local/state/opencode/` | rw |
+| `~/.cache/opencode/` | `/home/ubuntu/.cache/opencode/` | rw |
+| `~/.agents/` (skills) | `/home/ubuntu/.agents/` | ro |
 
 ## Security model
 

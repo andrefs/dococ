@@ -15,12 +15,29 @@ DOCOC_VERSION="0.1.0"
 
 DOCOC_IMAGE_DEFAULT="dococ/opencode:latest"
 DOCOC_WORKDIR="/workspace"
+# Home directory inside the container. All host state (opencode dirs, agents
+# skills) is mounted under this path so opencode reads it via $HOME, and the
+# host username never appears inside the container.
+DOCOC_CONTAINER_HOME="${DOCOC_CONTAINER_HOME:-/home/ubuntu}"
+# Bump when the mount layout changes so existing containers are recreated.
+DOCOC_MOUNT_VERSION="2"
+
+# Container-side destinations for opencode's state dirs and agent skills. These
+# are fixed so the containerized opencode (HOME=$DOCOC_CONTAINER_HOME) reads
+# them; only the host *source* changes under --isolated.
+DOCOC_C_CONFIG="$DOCOC_CONTAINER_HOME/.config/opencode"
+DOCOC_C_DATA="$DOCOC_CONTAINER_HOME/.local/share/opencode"
+DOCOC_C_STATE="$DOCOC_CONTAINER_HOME/.local/state/opencode"
+DOCOC_C_CACHE="$DOCOC_CONTAINER_HOME/.cache/opencode"
+DOCOC_C_AGENTS="$DOCOC_CONTAINER_HOME/.agents"
 
 # Locations on the host that hold opencode state.
 DOCOC_OPENCODE_CONFIG="${DOCOC_OPENCODE_CONFIG:-$HOME/.config/opencode}"
 DOCOC_OPENCODE_DATA="${DOCOC_OPENCODE_DATA:-$HOME/.local/share/opencode}"
 DOCOC_OPENCODE_STATE="${DOCOC_OPENCODE_STATE:-$HOME/.local/state/opencode}"
 DOCOC_OPENCODE_CACHE="${DOCOC_OPENCODE_CACHE:-$HOME/.cache/opencode}"
+# Host directory holding skills (and other agent assets) exposed read-only.
+DOCOC_AGENTS_DIR="${DOCOC_AGENTS_DIR:-$HOME/.agents}"
 
 # dococ's own runtime roots.
 DOCOC_CONFIG_DIR="${DOCOC_CONFIG_DIR:-$HOME/.config/dococ}"
@@ -282,15 +299,19 @@ prepare_isolated_data() {
 build_mounts() {
     local src
     core_mounts=()
-    # Core opencode state (read-only config, rw data/state/cache).
+    # Core opencode state (read-only config, rw data/state/cache), mounted at
+    # the container-home paths opencode actually reads via $HOME.
     [[ -d "$DOCOC_OPENCODE_CONFIG" ]] \
-        && core_mounts+=("-v" "$DOCOC_OPENCODE_CONFIG:$DOCOC_OPENCODE_CONFIG:ro")
+        && core_mounts+=("-v" "$DOCOC_OPENCODE_CONFIG:$DOCOC_C_CONFIG:ro")
     [[ -d "$DOCOC_OPENCODE_DATA" ]] \
-        && core_mounts+=("-v" "$DOCOC_OPENCODE_DATA:$DOCOC_OPENCODE_DATA")
+        && core_mounts+=("-v" "$DOCOC_OPENCODE_DATA:$DOCOC_C_DATA")
     [[ -d "$DOCOC_OPENCODE_STATE" ]] \
-        && core_mounts+=("-v" "$DOCOC_OPENCODE_STATE:$DOCOC_OPENCODE_STATE")
+        && core_mounts+=("-v" "$DOCOC_OPENCODE_STATE:$DOCOC_C_STATE")
     [[ -d "$DOCOC_OPENCODE_CACHE" ]] \
-        && core_mounts+=("-v" "$DOCOC_OPENCODE_CACHE:$DOCOC_OPENCODE_CACHE")
+        && core_mounts+=("-v" "$DOCOC_OPENCODE_CACHE:$DOCOC_C_CACHE")
+    # Agent skills (and any future harness assets), read-only.
+    [[ -d "$DOCOC_AGENTS_DIR" ]] \
+        && core_mounts+=("-v" "$DOCOC_AGENTS_DIR:$DOCOC_C_AGENTS:ro")
     # Project directory.
     core_mounts+=("-v" "$DOCOC_PROJECT_DIR:$DOCOC_WORKDIR")
     # User-requested mounts.
@@ -316,9 +337,10 @@ create_container() {
         --label "dococ.project=$DOCOC_PROJECT_DIR"
         --label "dococ.workdir=$DOCOC_WORKDIR"
         --label "dococ.isolated=$DOCOC_ISOLATED"
+        --label "dococ.mountv=$DOCOC_MOUNT_VERSION"
         --user "$(id -u):$(id -g)"
         --workdir "$DOCOC_WORKDIR"
-        -e HOME=/home/ubuntu
+        -e "HOME=$DOCOC_CONTAINER_HOME"
     )
 
     if [[ "$DOCOC_OFFLINE" = 1 ]]; then
@@ -352,12 +374,16 @@ do_run() {
         stderr "removing existing container '$name' (--new)"
         docker rm -f "$name" >/dev/null </dev/null
     elif container_exists "$name"; then
-        # Recreate if the existing container's isolation mode mismatches the
-        # requested one (mounts differ, so the old container is unusable).
-        local existing_iso
+        # Recreate if the existing container's isolation mode or mount layout
+        # mismatches the requested one (mounts differ, so it is unusable).
+        local existing_iso existing_mountv
         existing_iso="$(docker inspect -f '{{index .Config.Labels "dococ.isolated"}}' "$name" </dev/null)"
+        existing_mountv="$(docker inspect -f '{{index .Config.Labels "dococ.mountv"}}' "$name" </dev/null)"
         if [[ "$existing_iso" != "$DOCOC_ISOLATED" ]]; then
             stderr "recreating '$name' (isolation changed)"
+            docker rm -f "$name" >/dev/null </dev/null
+        elif [[ "$existing_mountv" != "$DOCOC_MOUNT_VERSION" ]]; then
+            stderr "recreating '$name' (mount layout changed)"
             docker rm -f "$name" >/dev/null </dev/null
         fi
     fi
