@@ -14,7 +14,7 @@ set -euo pipefail
 DOCOC_VERSION="0.1.0"
 
 DOCOC_IMAGE_DEFAULT="dococ/opencode:latest"
-DOCOC_WORKDIR="/workspace"
+DOCOC_WORKDIR=""
 # Home directory inside the container. All host state (opencode dirs, agents
 # skills) is mounted under this path so opencode reads it via $HOME, and the
 # host username never appears inside the container.
@@ -451,8 +451,10 @@ build_mounts() {
     # Agent skills (and any future harness assets), read-only.
     [[ -d "$DOCOC_AGENTS_DIR" ]] \
         && core_mounts+=("-v" "$DOCOC_AGENTS_DIR:$DOCOC_C_AGENTS:ro")
-    # Project directory.
-    core_mounts+=("-v" "$DOCOC_PROJECT_DIR:$DOCOC_WORKDIR")
+    # Project directory. Mount at the host absolute path so sessions created
+    # on the host (which record the host-absolute path) can be resumed in the
+    # container, and vice versa. This is also the container's working directory.
+    core_mounts+=("-v" "$DOCOC_PROJECT_DIR:$DOCOC_PROJECT_DIR")
     # User-requested mounts.
     for src in "${DOCOC_MOUNTS[@]}"; do
         src="$(readlink -f "$src")"
@@ -503,6 +505,7 @@ create_container() {
 do_run() {
     local name
     DOCOC_PROJECT_DIR="$(pwd)"
+    DOCOC_WORKDIR="$DOCOC_PROJECT_DIR"
     name="$(project_container_name "$DOCOC_PROJECT_DIR")"
 
     command -v docker >/dev/null 2>&1 || die "docker not found in PATH"
