@@ -477,17 +477,19 @@ Requirements:
 1. Detect project type (Node.js, Python, Rust, Go, etc.)
 2. Recommend system dependencies (apt packages) in DOCOC_APT_PACKAGES
 3. Suggest useful environment variables in DOCOC_ENV
-4. Set DOCOC_OFFLINE, DOCOC_REMOVE as appropriate
-6. DO NOT set DOCOC_ISOLATED=true unless the user explicitly requests isolation. Default to DOCOC_ISOLATED=false (shared opencode database across host and container sessions).
-7. Include the user's extra mounts/mount-files in DOCOC_MOUNTS and DOCOC_MOUNT_FILES
-8. Recommend language server installation commands in DOCOC_SETUP_COMMANDS (e.g., rustup component add rust-analyzer, go install golang.org/x/tools/gopls@latest, npm i -g typescript-language-server, pip install pyright, cargo install lua-language-server). These run at build time as the ubuntu user.
-9. Use exact dococ variable names as bash arrays:
+4. Recommend language server installation commands in DOCOC_SETUP_COMMANDS (e.g., rustup component add rust-analyzer, go install golang.org/x/tools/gopls@latest, npm i -g typescript-language-server, pip install pyright, cargo install lua-language-server). These run at build time as the ubuntu user.
+5. DO NOT add any extra mounts to DOCOC_MOUNTS or DOCOC_MOUNT_FILES - the default mounts already include the project directory at its host path, opencode config/data/state/cache, and agents. Only include user-requested extra mounts (which are already provided in the prompt above).
+6. Use exact dococ variable names as bash arrays:
    - DOCOC_APT_PACKAGES=(pkg1 pkg2)
-   - DOCOC_MOUNTS=(\"src:dst:ro\" ...)
-   - DOCOC_MOUNT_FILES=(\"src:dst:ro\" ...)
+   - DOCOC_MOUNTS=()  # Empty by default - only add user-requested extra mounts
+   - DOCOC_MOUNT_FILES=()  # Empty by default - only add user-requested extra mount-files
    - DOCOC_ENV=(KEY=VALUE ...)
    - DOCOC_SETUP_COMMANDS=(\"cmd1\" \"cmd2\" ...)
-10. Add explanatory comments
+7. Add explanatory comments
+
+IMPORTANT - Variable ownership:
+- YOU SET (based on project analysis): DOCOC_APT_PACKAGES, DOCOC_ENV, DOCOC_SETUP_COMMANDS, DOCOC_MOUNTS (only user-requested), DOCOC_MOUNT_FILES (only user-requested)
+- USER SETS (behavioral preferences, do NOT set these): DOCOC_ISOLATED, DOCOC_OFFLINE, DOCOC_REMOVE, DOCOC_IMAGE, DOCOC_WORKDIR, DOCOC_COMMAND, DOCOC_REMOVE
 
 SECURITY CONSTRAINTS:
 - NEVER mount ~/.ssh, ~/.gnupg, /etc, /, or other sensitive directories
