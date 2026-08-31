@@ -356,8 +356,8 @@ SECURITY CONSTRAINTS (must follow):
 
 CONFIG FORMAT (use exact dococ variable names as bash arrays):
 - DOCOC_APT_PACKAGES=(pkg1 pkg2)       # space-separated in parens
-- DOCOC_MOUNTS=(\"src:dst:ro\" \"src2:dst2\")  # with optional :ro suffix
-- DOCOC_MOUNT_FILES=(\"src:dst:ro\")
+- DOCOC_MOUNTS=()                      # DO NOT ADD MOUNTS - user will be prompted separately
+- DOCOC_MOUNT_FILES=()                 # DO NOT ADD MOUNTS - user will be prompted separately
 - DOCOC_ENV=(KEY=VALUE KEY2=VALUE2)
 - DOCOC_ISOLATED=0|1
 - DOCOC_OFFLINE=0|1
@@ -371,7 +371,8 @@ Output config ONLY to STDOUT. Output findings ONLY to STDERR with 'FINDING: ' pr
     # Run opencode on host to analyze project and generate config
     local generated raw_output
     # Capture stdout (config) and stderr (findings) separately
-    raw_output=$(opencode run "$prompt" 2> >(while IFS= read -r line; do
+    # Redirect stdin from /dev/null so opencode doesn't consume our later prompts
+    raw_output=$(opencode run "$prompt" </dev/null 2> >(while IFS= read -r line; do
         if [[ "$line" =~ ^FINDING:[[:space:]]*(.*) ]]; then
             stderr "found: ${BASH_REMATCH[1]}"
         fi
@@ -387,6 +388,46 @@ Output config ONLY to STDOUT. Output findings ONLY to STDERR with 'FINDING: ' pr
     # Write the generated config (stdout only)
     printf '%s\n' "$generated" > "$config_file"
     stderr "generated $config_file"
+    cat "$config_file"
+
+    # Now prompt user for extra mounts
+    prompt_extra_mounts "$config_file"
+}
+
+# Prompt user for additional mounts and append to config file.
+prompt_extra_mounts() {
+    local config_file="$1"
+    local mount
+
+    echo
+    stderr "Default mounts already include: project dir, opencode config/data/state/cache, agents."
+    stderr "You can add extra mounts now (e.g., for shared data, credentials, tools)."
+    stderr "Press Enter to skip, or enter mount spec (host_path[:container_path][:ro])."
+
+    # Mounts
+    while true; do
+        read -r -p "Extra mount (or empty to finish)? " mount
+        [[ -n "$mount" ]] || break
+        # Append to DOCOC_MOUNTS array in config file
+        # Use | as sed delimiter since mount paths contain /
+        sed -i "/^DOCOC_MOUNTS=(/s|)| \"$mount\")|" "$config_file"
+        if ! grep -q "^DOCOC_MOUNTS=" "$config_file"; then
+            echo "DOCOC_MOUNTS=(\"$mount\")" >> "$config_file"
+        fi
+    done
+
+    # Mount files
+    stderr "Extra mount-files (read-only individual files). Press Enter to skip."
+    while true; do
+        read -r -p "Extra mount-file (host_file[:container_path]) or empty to finish? " mount
+        [[ -n "$mount" ]] || break
+        sed -i "/^DOCOC_MOUNT_FILES=(/s|)| \"$mount\")|" "$config_file"
+        if ! grep -q "^DOCOC_MOUNT_FILES=" "$config_file"; then
+            echo "DOCOC_MOUNT_FILES=(\"$mount\")" >> "$config_file"
+        fi
+    done
+
+    stderr "final config:"
     cat "$config_file"
 }
 
