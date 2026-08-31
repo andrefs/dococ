@@ -365,8 +365,8 @@ Output config ONLY to STDOUT. Your analysis/thinking goes to stderr automaticall
 
     # Run opencode on host to analyze project and generate config
     local generated
-    # Stream opencode output in real-time; capture stdout for config
-    generated=$(opencode run "$prompt" </dev/null 2>&1 | tee >(cat >&2)) || {
+    # Stream opencode output in real-time with thinking; capture stdout for config
+    generated=$(opencode run "$prompt" --thinking </dev/null 2>&1 | tee >(cat >&2)) || {
         stderr "opencode analysis failed"
         return 1
     }
