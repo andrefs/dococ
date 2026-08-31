@@ -20,7 +20,7 @@ DOCOC_WORKDIR="/workspace"
 # host username never appears inside the container.
 DOCOC_CONTAINER_HOME="${DOCOC_CONTAINER_HOME:-/home/ubuntu}"
 # Bump when the mount layout changes so existing containers are recreated.
-DOCOC_MOUNT_VERSION="2"
+DOCOC_MOUNT_VERSION="3"
 
 # Container-side destinations for opencode's state dirs and agent skills. These
 # are fixed so the containerized opencode (HOME=$DOCOC_CONTAINER_HOME) reads
@@ -305,10 +305,16 @@ build_mounts() {
         && core_mounts+=("-v" "$DOCOC_OPENCODE_CONFIG:$DOCOC_C_CONFIG:ro")
     [[ -d "$DOCOC_OPENCODE_DATA" ]] \
         && core_mounts+=("-v" "$DOCOC_OPENCODE_DATA:$DOCOC_C_DATA")
+    # Credentials are read only: the agent may use its own keys but must not be
+    # able to rewrite them (prevent tampering/redirect of provider endpoints).
+    # The file mount overlays the rw data-dir mount, so only auth.json is ro
+    # while the session DB below it stays writable.
+    [[ -f "$DOCOC_OPENCODE_DATA/auth.json" ]] \
+        && core_mounts+=("-v" "$DOCOC_OPENCODE_DATA/auth.json:$DOCOC_C_DATA/auth.json:ro")
     [[ -d "$DOCOC_OPENCODE_STATE" ]] \
         && core_mounts+=("-v" "$DOCOC_OPENCODE_STATE:$DOCOC_C_STATE")
     [[ -d "$DOCOC_OPENCODE_CACHE" ]] \
-        && core_mounts+=("-v" "$DOCOC_OPENCODE_CACHE:$DOCOC_C_CACHE")
+        && core_mounts+=("-v" "$DOCOC_OPENCODE_CACHE:$DOCOC_C_CACHE:ro")
     # Agent skills (and any future harness assets), read-only.
     [[ -d "$DOCOC_AGENTS_DIR" ]] \
         && core_mounts+=("-v" "$DOCOC_AGENTS_DIR:$DOCOC_C_AGENTS:ro")
@@ -340,6 +346,8 @@ create_container() {
         --label "dococ.mountv=$DOCOC_MOUNT_VERSION"
         --user "$(id -u):$(id -g)"
         --workdir "$DOCOC_WORKDIR"
+        --cap-drop ALL
+        --security-opt no-new-privileges
         -e "HOME=$DOCOC_CONTAINER_HOME"
     )
 
