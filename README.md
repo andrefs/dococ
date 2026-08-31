@@ -45,9 +45,11 @@ To pick up a newer opencode release, rebuild the image with `dococ update`.
 
 ```sh
 cd ~/src/my-project
-dococ init          # generates .dococ, builds image with LSPs
+dococ init          # runs opencode to analyze project, generates .dococ, builds image with LSPs
 dococ               # launch opencode
 ```
+
+The `dococ init` command runs `opencode` to automatically analyze your project and generate a tailored `.dococ` configuration file, then builds the container image with the appropriate apt packages and language server setup commands. If a `.dococ` already exists, you'll be prompted before overwriting.
 
 ## Usage
 
@@ -172,7 +174,7 @@ Common examples:
 The image build adds common tool paths to `PATH` (`~/.cargo/bin`, `~/.npm-global/bin`, `~/go/bin`, `~/.local/bin`)
 so these commands work at build time.
 
-`dococ gen-config` detects the project type and suggests appropriate LSP install commands.
+`dococ gen-config` detects the project type and suggests appropriate LSP install commands by running **opencode** to analyze your project.
 
 Example `~/.config/dococ/config.sh`:
 
@@ -207,8 +209,8 @@ container.
 
 | Subcommand | Description |
 |------------|-------------|
-| `init` | Initialize project: generate config (`.dococ`) and build image |
-| `gen-config` | Generate `.dococ` by analyzing the project with opencode (interactive, shows thinking) |
+| `init` | Initialize project: runs **opencode** to analyze project and generate `.dococ` config, then builds image |
+| `gen-config` | Runs **opencode** to analyze the project and generate `.dococ` config (interactive, shows thinking) |
 | `update` | Build the project's container image (uses `.dococ` apt packages + LSP setup commands) |
 | `images` | List all dococ container images |
 | `list` | List this project's containers (marks canonical) |
