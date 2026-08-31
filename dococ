@@ -433,14 +433,20 @@ Write the config directly to $config_file. Your analysis/thinking will be shown 
 
 do_update() {
     local script_dir dockerfile apt_packages setup_commands
+
+    # Find Dockerfile: check script dir, config dir, then cwd
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    dockerfile="$script_dir/Dockerfile"
+    if [[ -f "$script_dir/Dockerfile" ]]; then
+        dockerfile="$script_dir/Dockerfile"
+    elif [[ -f "$DOCOC_CONFIG_DIR/Dockerfile" ]]; then
+        dockerfile="$DOCOC_CONFIG_DIR/Dockerfile"
+    elif [[ -f "$PWD/Dockerfile" ]]; then
+        dockerfile="$PWD/Dockerfile"
+    else
+        die "Dockerfile not found in script dir ($script_dir), config dir ($DOCOC_CONFIG_DIR), or cwd ($PWD)"
+    fi
 
     command -v docker >/dev/null 2>&1 || die "docker not found in PATH"
-
-    if [[ ! -f "$dockerfile" ]]; then
-        die "Dockerfile not found at $dockerfile (is dococ cloned as a repo?)"
-    fi
 
     # Join apt packages array into space-separated string for build arg
     apt_packages="${DOCOC_APT_PACKAGES[*]}"
