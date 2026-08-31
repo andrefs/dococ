@@ -1,1 +1,211 @@
 #!/bin/bash
+#
+# dococ — run opencode inside a Docker container with relevant folders mounted.
+#
+# See README.md and PLAN.md for the full design. This file is split into
+# sections; unimplemented behaviors are stubbed until their step lands.
+
+set -euo pipefail
+
+# ---------------------------------------------------------------------------
+# Configuration and defaults
+# ---------------------------------------------------------------------------
+
+DOCOC_VERSION="0.1.0"
+
+DOCOC_IMAGE_DEFAULT="dococ/opencode:latest"
+DOCOC_WORKDIR="/workspace"
+
+# Locations on the host that hold opencode state.
+DOCOC_OPENCODE_CONFIG="${DOCOC_OPENCODE_CONFIG:-$HOME/.config/opencode}"
+DOCOC_OPENCODE_DATA="${DOCOC_OPENCODE_DATA:-$HOME/.local/share/opencode}"
+DOCOC_OPENCODE_STATE="${DOCOC_OPENCODE_STATE:-$HOME/.local/state/opencode}"
+DOCOC_OPENCODE_CACHE="${DOCOC_OPENCODE_CACHE:-$HOME/.cache/opencode}"
+
+# dococ's own runtime roots.
+DOCOC_CONFIG_DIR="${DOCOC_CONFIG_DIR:-$HOME/.config/dococ}"
+DOCOC_DATA_DIR="${DOCOC_DATA_DIR:-$HOME/.local/share/dococ}"
+
+# User can override image and container naming via environment/config.
+DOCOC_IMAGE="${DOCOC_IMAGE:-$DOCOC_IMAGE_DEFAULT}"
+
+# CLI-resolved options (populated by the parser).
+declare -a DOCOC_MOUNTS=()
+declare -a DOCOC_MOUNT_FILES=()
+declare -a DOCOC_ENV=()
+DOCOC_ISOLATED=0
+DOCOC_NEW=0
+DOCOC_REMOVE=0
+DOCOC_OFFLINE=0
+DOCOC_COMMAND=""
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+stderr() { printf 'dococ: %s\n' "$*" >&2; }
+
+die() {
+    stderr "$*"
+    exit 1
+}
+
+# Render usage/help text.
+usage() {
+    cat <<EOF
+dococ ${DOCOC_VERSION} — run opencode inside a Docker container.
+
+Usage:
+  dococ [options] [--command CMD]
+  dococ status
+  dococ clean
+  dococ update
+
+With no subcommand, dococ opens (or reuses) a container for the current
+project and launches opencode inside it.
+
+Options:
+  -m, --mount PATH       Mount an extra folder into the container (repeatable).
+      --mount-file PATH  Mount an individual file (repeatable).
+  -e, --env KEY=VAL      Set an environment variable in the container (repeatable).
+      --isolated         Use a per-project opencode data dir instead of the
+                         shared database.
+  -n, --new              Force a new container (removes the existing one).
+      --rm               Remove the container when the session ends (default: keep).
+      --keep             Keep the container on exit (explicit; the default).
+      --offline          Run with --network none (no network access at all).
+      --command CMD      Run CMD in a one-off container instead of opencode.
+  -h, --help             Show this help and exit.
+  -v, --version          Show version and exit.
+
+Subcommands:
+  status       List dococ containers.
+  clean        Remove all dococ containers.
+  update       Rebuild the dococ image from the current opencode binary.
+EOF
+}
+
+# ---------------------------------------------------------------------------
+# Config loading
+# ---------------------------------------------------------------------------
+
+# Load a dococ config file if present. Files are Bash scripts that may set
+# DOCOC_* variables and append to DOCOC_MOUNTS / DOCOC_ENV / DOCOC_MOUNT_FILES.
+load_config() {
+    local f="$1"
+    [[ -f "$f" ]] || return 0
+    # shellcheck disable=SC1090
+    source "$f"
+}
+
+# ---------------------------------------------------------------------------
+# Argument parsing
+# ---------------------------------------------------------------------------
+
+parse_args() {
+    local arg
+    while (($#)); do
+        arg="$1"
+        case "$arg" in
+            -h|--help)
+                usage
+                exit 0
+                ;;
+            -v|--version)
+                echo "dococ ${DOCOC_VERSION}"
+                exit 0
+                ;;
+            -m|--mount)
+                shift || true
+                [[ $# -ge 1 ]] || die "option '$arg' requires an argument"
+                DOCOC_MOUNTS+=("$1")
+                ;;
+            --mount-file)
+                shift || true
+                [[ $# -ge 1 ]] || die "option '$arg' requires an argument"
+                DOCOC_MOUNT_FILES+=("$1")
+                ;;
+            -e|--env)
+                shift || true
+                [[ $# -ge 1 ]] || die "option '$arg' requires an argument"
+                DOCOC_ENV+=("$1")
+                ;;
+            --isolated)
+                DOCOC_ISOLATED=1
+                ;;
+            -n|--new)
+                DOCOC_NEW=1
+                ;;
+            --rm)
+                DOCOC_REMOVE=1
+                ;;
+            --keep)
+                DOCOC_REMOVE=0
+                ;;
+            --offline)
+                DOCOC_OFFLINE=1
+                ;;
+            --command)
+                shift || true
+                [[ $# -ge 1 ]] || die "option '$arg' requires an argument"
+                DOCOC_COMMAND="$1"
+                ;;
+            status|clean|update)
+                # Subcommand dispatch happens after parsing.
+                DOCOC_SUBCOMMAND="${arg}"
+                ;;
+            -*)
+                die "unknown option: $arg (see 'dococ --help')"
+                ;;
+            *)
+                die "unexpected argument: $arg (see 'dococ --help')"
+                ;;
+        esac
+        shift
+    done
+}
+
+# ---------------------------------------------------------------------------
+# Subcommands (stubbed until their step lands)
+# ---------------------------------------------------------------------------
+
+do_status() {
+    die "status: not implemented yet"
+}
+
+do_clean() {
+    die "clean: not implemented yet"
+}
+
+do_update() {
+    die "update: not implemented yet"
+}
+
+do_run() {
+    die "run: not implemented yet"
+}
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+main() {
+    DOCOC_SUBCOMMAND="run"
+
+    # Load config: global first, then per-project (precedence over global).
+    load_config "$DOCOC_CONFIG_DIR/config.sh"
+    local project_config="${DOCOC_PROJECT_CONFIG:-$PWD/.dococ}"
+    load_config "$project_config"
+
+    parse_args "$@"
+
+    case "$DOCOC_SUBCOMMAND" in
+        status) do_status ;;
+        clean)  do_clean ;;
+        update) do_update ;;
+        run)    do_run ;;
+        *)      die "unknown subcommand: $DOCOC_SUBCOMMAND" ;;
+    esac
+}
+
+main "$@"
