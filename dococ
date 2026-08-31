@@ -364,16 +364,16 @@ Reference the full list of available config variables at: $example_url
 Output config ONLY to STDOUT. Your analysis/thinking goes to stderr automatically."
 
     # Run opencode on host to analyze project and generate config
-    local generated raw_output
-    # Capture stdout (config) and pass through stderr (activity) in real-time
-    raw_output=$(opencode run "$prompt" </dev/null 2>&1) || {
+    local generated
+    # Stream opencode output in real-time; capture stdout for config
+    generated=$(opencode run "$prompt" </dev/null 2>&1 | tee >(cat >&2)) || {
         stderr "opencode analysis failed"
         return 1
     }
 
     # Filter out opencode debug/activity lines from stdout, keep only config lines
     # Config lines start with DOCOC_ or are comments (#) or empty lines
-    generated=$(printf '%s\n' "$raw_output" | grep -E '^(DOCOC_[A-Z_]+=|#|$)')
+    generated=$(printf '%s\n' "$generated" | grep -E '^(DOCOC_[A-Z_]+=|#|$)')
 
     # Write the generated config (stdout only)
     printf '%s\n' "$generated" > "$config_file"
