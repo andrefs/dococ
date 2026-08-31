@@ -1,0 +1,103 @@
+# dococ configuration example
+# ============================
+# This file documents all available configuration variables for dococ.
+# Copy this to ~/.config/dococ/config.sh (global) or .dococ (per-project)
+# and uncomment/modify as needed.
+#
+# Config files are Bash-sourced, so standard Bash array syntax applies.
+# Precedence: CLI flags > per-project (.dococ) > global (config.sh) > defaults.
+
+# -----------------------------------------------------------------------------
+# Image and container
+# -----------------------------------------------------------------------------
+
+# Override the container image (default: per-project image dococ/opencode:<hash>
+# or base image dococ/opencode:base if no apt packages declared).
+# DOCOC_IMAGE="dococ/opencode:latest"
+
+# -----------------------------------------------------------------------------
+# System packages (apt)
+# -----------------------------------------------------------------------------
+# Additional apt packages to install in the project's container image.
+# Applied at build time via `dococ update`. Each project gets its own image
+# tagged dococ/opencode:<project-hash> with the merged package list from
+# global + per-project config.
+#
+# Example:
+# DOCOC_APT_PACKAGES=(cargo golang python3 python3-pip nodejs)
+
+# -----------------------------------------------------------------------------
+# Extra mounts
+# -----------------------------------------------------------------------------
+# Additional host directories to mount into the container.
+# Each entry: "host_path" (mounted at same path in container, read-write)
+# or "host_path:container_path" (custom container path)
+# or "host_path:container_path:ro" (read-only)
+#
+# SECURITY NOTE: Mount only what is necessary. Avoid mounting sensitive
+# directories like ~/.ssh, ~/.gnupg, /etc, or the root filesystem.
+# Prefer mounting specific project-related directories.
+#
+# Example:
+# DOCOC_MOUNTS=(
+#   "$HOME/.local/share/my-tool:/home/ubuntu/.local/share/my-tool:ro"
+#   "/path/to/shared-data:/workspace/shared-data"
+# )
+
+# -----------------------------------------------------------------------------
+# Extra mount files (read-only)
+# -----------------------------------------------------------------------------
+# Individual files to mount read-only into the container.
+# Each entry: "host_file_path" (mounted at same path) or "host:container"
+#
+# Example:
+# DOCOC_MOUNT_FILES=(
+#   "$HOME/.gitconfig:/home/ubuntu/.gitconfig:ro"
+# )
+
+# -----------------------------------------------------------------------------
+# Environment variables
+# -----------------------------------------------------------------------------
+# Environment variables to set in the container.
+# Each entry: "KEY=VALUE"
+#
+# Example:
+# DOCOC_ENV=(
+#   "EDITOR=vim"
+#   "RUST_BACKTRACE=1"
+# )
+
+# -----------------------------------------------------------------------------
+# Opencode data isolation
+# -----------------------------------------------------------------------------
+# Use a per-project opencode data directory instead of the shared database.
+# Creates ~/.local/share/dococ/<project-hash>/ seeded with auth.json (read-only).
+# DOCOC_ISOLATED=1
+
+# -----------------------------------------------------------------------------
+# Network
+# -----------------------------------------------------------------------------
+# Run with --network none (no network access). Use for purely local work.
+# DOCOC_OFFLINE=1
+
+# -----------------------------------------------------------------------------
+# Container lifecycle
+# -----------------------------------------------------------------------------
+# Remove container when session ends (default: keep).
+# DOCOC_REMOVE=1
+
+# Keep container on exit (explicit; the default).
+# DOCOC_KEEP=1
+
+# -----------------------------------------------------------------------------
+# Custom opencode paths (advanced)
+# -----------------------------------------------------------------------------
+# Override default host locations for opencode state (if not using standard XDG dirs).
+# DOCOC_OPENCODE_CONFIG="$HOME/.config/opencode"
+# DOCOC_OPENCODE_DATA="$HOME/.local/share/opencode"
+# DOCOC_OPENCODE_STATE="$HOME/.local/state/opencode"
+# DOCOC_OPENCODE_CACHE="$HOME/.cache/opencode"
+# DOCOC_AGENTS_DIR="$HOME/.agents"
+# DOCOC_CONFIG_DIR="$HOME/.config/dococ"
+# DOCOC_DATA_DIR="$HOME/.local/share/dococ"
+# DOCOC_CONTAINER_HOME="/home/ubuntu"

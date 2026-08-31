@@ -91,6 +91,7 @@ Usage:
   dococ status
   dococ clean
   dococ update
+  dococ gen-config
 
 With no subcommand, dococ opens (or reuses) a container for the current
 project and launches opencode inside it.
@@ -113,6 +114,9 @@ Options:
       --keep             Keep the container on exit (explicit; the default).
       --offline          Run with --network none (no network access at all).
       --command CMD      Run CMD in a one-off container instead of opencode.
+      --config-file PATH Per-project config file (default: ./.dococ).
+      --global-config PATH Global config file (default: ~/.config/dococ/config.sh).
+      --output PATH      Output file for gen-config (default: ./.dococ).
   -h, --help             Show this help and exit.
   -v, --version          Show version and exit.
 
@@ -121,10 +125,16 @@ Subcommands:
   status       List all dococ containers.
   clean        Remove all dococ containers.
   update       Rebuild the dococ image from the current opencode binary.
+  gen-config   Generate a .dococ config by analyzing the project with opencode.
 EOF
 }
 
 # ---------------------------------------------------------------------------
+# Config file paths (can be overridden by CLI)
+DOCOC_PROJECT_CONFIG="${DOCOC_PROJECT_CONFIG:-$PWD/.dococ}"
+DOCOC_GLOBAL_CONFIG="${DOCOC_GLOBAL_CONFIG:-$HOME/.config/dococ/config.sh}"
+DOCOC_GEN_CONFIG_OUTPUT="${DOCOC_GEN_CONFIG_OUTPUT:-$PWD/.dococ}"
+
 # Config loading
 # ---------------------------------------------------------------------------
 
@@ -199,12 +209,27 @@ parse_args() {
             --offline)
                 DOCOC_OFFLINE=1
                 ;;
+            --config-file)
+                shift || true
+                [[ $# -ge 1 ]] || die "option '$arg' requires an argument"
+                DOCOC_PROJECT_CONFIG="$1"
+                ;;
+            --global-config)
+                shift || true
+                [[ $# -ge 1 ]] || die "option '$arg' requires an argument"
+                DOCOC_GLOBAL_CONFIG="$1"
+                ;;
+            --output)
+                shift || true
+                [[ $# -ge 1 ]] || die "option '$arg' requires an argument"
+                DOCOC_GEN_CONFIG_OUTPUT="$1"
+                ;;
             --command)
                 shift || true
                 [[ $# -ge 1 ]] || die "option '$arg' requires an argument"
                 DOCOC_COMMAND="$1"
                 ;;
-            list|status|clean|update)
+            list|status|clean|update|gen-config)
                 # Subcommand dispatch happens after parsing.
                 DOCOC_SUBCOMMAND="${arg}"
                 ;;
@@ -295,6 +320,53 @@ do_clean() {
     else
         stderr "no dococ containers to remove"
     fi
+}
+
+# Generate .dococ config by running opencode to analyze the project.
+do_gen_config() {
+    local project_dir="${PWD}"
+    local config_file="${DOCOC_GEN_CONFIG_OUTPUT}"
+    local prompt
+    local example_url="https://raw.githubusercontent.com/andrefs/dococ/main/dococ.example"
+
+    if [[ -f "$config_file" ]]; then
+        read -r -p "$config_file already exists. Overwrite? [y/N] " ans
+        [[ "$ans" =~ ^[Yy]$ ]] || { stderr "aborted"; return 0; }
+    fi
+
+    stderr "analyzing project with opencode..."
+
+    prompt="Analyze this project and generate a dococ config file as a bash script.
+
+Output ONLY the config file content (bash syntax, setting DOCOC_* variables).
+
+Requirements:
+1. Detect project type (Node.js, Python, Rust, Go, etc.)
+2. Recommend system dependencies (apt packages) in DOCOC_APT_PACKAGES
+3. Suggest ONLY safe, project-relevant mounts in DOCOC_MOUNTS
+4. Suggest useful environment variables in DOCOC_ENV
+
+SECURITY CONSTRAINTS (must follow):
+- NEVER mount ~/.ssh, ~/.gnupg, /etc, /, or other sensitive directories
+- Only mount directories that are clearly project-related and safe
+- Prefer read-only mounts where possible (use :ro suffix)
+- Minimize mounts - less is more secure
+
+Reference the full list of available config variables at: $example_url
+
+Output only the bash config content. Include explanatory comments."
+
+    # Run opencode on host to analyze project and generate config
+    local generated
+    generated=$(opencode run "$prompt" 2>/dev/null) || {
+        stderr "opencode analysis failed"
+        return 1
+    }
+
+    # Write the generated config
+    printf '%s\n' "$generated" > "$config_file"
+    stderr "generated $config_file"
+    cat "$config_file"
 }
 
 do_update() {
@@ -625,9 +697,8 @@ main() {
     DOCOC_SUBCOMMAND="run"
 
     # Load config: global first, then per-project (precedence over global).
-    load_config "$DOCOC_CONFIG_DIR/config.sh"
-    local project_config="${DOCOC_PROJECT_CONFIG:-$PWD/.dococ}"
-    load_config "$project_config"
+    load_config "$DOCOC_GLOBAL_CONFIG"
+    load_config "$DOCOC_PROJECT_CONFIG"
 
     # Determine image tag:
     # - If DOCOC_IMAGE was explicitly set in environment, use it.
@@ -636,7 +707,7 @@ main() {
     if (( DOCOC_IMAGE_EXPLICIT )); then
         # User explicitly set a custom image; use as-is.
         :
-    elif (( ${#DOCOC_APT_PACKAGES[@]} > 0 )) || [[ -f "$project_config" ]]; then
+    elif (( ${#DOCOC_APT_PACKAGES[@]} > 0 )) || [[ -f "$DOCOC_PROJECT_CONFIG" ]]; then
         DOCOC_PROJECT_DIR="${DOCOC_PROJECT_DIR:-$PWD}"
         DOCOC_IMAGE="$(project_image_tag "$DOCOC_PROJECT_DIR")"
     else
@@ -647,12 +718,13 @@ main() {
     parse_args "$@"
 
     case "$DOCOC_SUBCOMMAND" in
-        list)   do_list ;;
-        status) do_status ;;
-        clean)  do_clean ;;
-        update) do_update ;;
-        run)    do_run ;;
-        *)      die "unknown subcommand: $DOCOC_SUBCOMMAND" ;;
+        list)      do_list ;;
+        status)    do_status ;;
+        clean)     do_clean ;;
+        update)    do_update ;;
+        gen-config) do_gen_config ;;
+        run)       do_run ;;
+        *)         die "unknown subcommand: $DOCOC_SUBCOMMAND" ;;
     esac
 }
 
