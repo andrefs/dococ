@@ -38,6 +38,7 @@ DOCOC_NEW=0
 DOCOC_REMOVE=0
 DOCOC_OFFLINE=0
 DOCOC_COMMAND=""
+declare -a core_mounts=()
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -193,8 +194,122 @@ do_update() {
     stderr "image '$DOCOC_IMAGE' built"
 }
 
+# ---------------------------------------------------------------------------
+# Container creation and run
+# ---------------------------------------------------------------------------
+
+# Stable container name for a project directory: dococ-<dirname>-<short hash>.
+project_container_name() {
+    local dir="$1"
+    local base hash
+    base="$(basename "$dir")"
+    hash="$(printf '%s' "$dir" | cksum | awk '{print $1}')"
+    printf 'dococ-%s-%s' "$base" "$hash"
+}
+
+# Does a docker container with the given name exist (in any state)?
+container_exists() {
+    docker ps -a --format '{{.Names}}' | grep -qx "$1"
+}
+
+# Build the -v mounts shared by every dococ container. Appends user-specified
+# mounts and mount-files afterwards. Uses global-state builder output var.
+build_mounts() {
+    local src
+    core_mounts=()
+    # Core opencode state (read-only config, rw data/state/cache).
+    [[ -d "$DOCOC_OPENCODE_CONFIG" ]] \
+        && core_mounts+=("-v" "$DOCOC_OPENCODE_CONFIG:$DOCOC_OPENCODE_CONFIG:ro")
+    [[ -d "$DOCOC_OPENCODE_DATA" ]] \
+        && core_mounts+=("-v" "$DOCOC_OPENCODE_DATA:$DOCOC_OPENCODE_DATA")
+    [[ -d "$DOCOC_OPENCODE_STATE" ]] \
+        && core_mounts+=("-v" "$DOCOC_OPENCODE_STATE:$DOCOC_OPENCODE_STATE")
+    [[ -d "$DOCOC_OPENCODE_CACHE" ]] \
+        && core_mounts+=("-v" "$DOCOC_OPENCODE_CACHE:$DOCOC_OPENCODE_CACHE")
+    # Project directory.
+    core_mounts+=("-v" "$DOCOC_PROJECT_DIR:$DOCOC_WORKDIR")
+    # User-requested mounts.
+    for src in "${DOCOC_MOUNTS[@]}"; do
+        src="$(readlink -f "$src")"
+        [[ -e "$src" ]] || die "mount path does not exist: $src"
+        core_mounts+=("-v" "$src:$src")
+    done
+    for src in "${DOCOC_MOUNT_FILES[@]}"; do
+        src="$(readlink -f "$src")"
+        [[ -f "$src" ]] || die "mount-file not found: $src"
+        core_mounts+=("-v" "$src:$src:ro")
+    done
+}
+
+# Create a detached, persistent container for the project and return its name.
+# Uses `sleep infinity` as the keep-alive process so the container stays up for
+# `docker exec` across invocations.
+create_container() {
+    local name="$1"
+    declare -a args=(
+        run -d --name "$name"
+        --label "dococ.project=$DOCOC_PROJECT_DIR"
+        --label "dococ.workdir=$DOCOC_WORKDIR"
+        --user "$(id -u):$(id -g)"
+        --workdir "$DOCOC_WORKDIR"
+        -e HOME=/home/ubuntu
+    )
+
+    if [[ "$DOCOC_OFFLINE" = 1 ]]; then
+        args+=(--network none)
+    fi
+
+    for e in "${DOCOC_ENV[@]}"; do
+        args+=(-e "$e")
+    done
+
+    build_mounts
+    args+=("${core_mounts[@]}")
+
+    args+=("$DOCOC_IMAGE" "sleep" "infinity")
+
+    docker "${args[@]}"
+}
+
 do_run() {
-    die "run: not implemented yet"
+    local name
+    DOCOC_PROJECT_DIR="$(pwd)"
+    name="$(project_container_name "$DOCOC_PROJECT_DIR")"
+
+    command -v docker >/dev/null 2>&1 || die "docker not found in PATH"
+
+    if [[ "$DOCOC_NEW" = 1 ]] && container_exists "$name"; then
+        stderr "removing existing container '$name' (--new)"
+        docker rm -f "$name" >/dev/null
+    fi
+
+    if ! container_exists "$name"; then
+        stderr "creating container '$name'..."
+        create_container "$name"
+        stderr "container '$name' created"
+    elif [[ "$(docker inspect -f '{{.State.Running}}' "$name")" != "true" ]]; then
+        stderr "starting stopped container '$name'..."
+        docker start "$name" >/dev/null
+    fi
+
+    if [[ -n "$DOCOC_COMMAND" ]]; then
+        set +e
+        docker exec -it "$name" bash -lc "$DOCOC_COMMAND"
+        local rc=$?
+        set -e
+    else
+        set +e
+        docker exec -it "$name" opencode
+        local rc=$?
+        set -e
+    fi
+
+    if [[ "$DOCOC_REMOVE" = 1 ]]; then
+        stderr "removing container '$name' (--rm)"
+        docker rm -f "$name" >/dev/null
+    fi
+
+    return "$rc"
 }
 
 # ---------------------------------------------------------------------------
